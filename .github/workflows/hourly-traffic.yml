@@ -1,8 +1,8 @@
 # File: hourly-traffic.yml
 # Date: June 10, 2026
 # Name: pkd
-# Description: GitHub Actions workflow to run the Edmonton transit position script,
-#              generate an interactive leafet heatmap, and commit it back to the repo.
+# Description: GitHub Actions workflow to run the Edmonton transit GTFS-RT script,
+#              generate an interactive leaflet heatmap, and commit it back to the repo.
 
 name: Hourly Edmonton Traffic Fetch
 
@@ -30,17 +30,15 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests folium branca
+        pip install requests folium branca protobuf gtfs-realtime-bindings
 
     - name: Run Fetch Script and Generate Heatmap
-      env:
-        EDMONTON_APP_TOKEN: ${{ secrets.EDMONTON_APP_TOKEN }}
       run: python bus-api.py
 
     - name: Commit and Push index.html
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add -A index.html
+        git add .
         git diff-index --quiet HEAD || git commit -m "Automated hourly traffic heatmap update"
-        git push
+        git push || echo "Nothing to push"
