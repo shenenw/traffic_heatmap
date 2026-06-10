@@ -1,7 +1,7 @@
 # File: bus-api.py
 # Date: June 10, 2026
-# Name: pmd
-# Description: Fetches real-time ETS bus positions, filters out stopped/errant data, 
+# Name: pkd
+# Description: Fetches real-time ETS bus positions, filters stopped/errant data, 
 #              and generates an interactive HTML traffic intensity heatmap.
 
 import os
@@ -24,9 +24,8 @@ def fetch_live_bus_positions():
         "Accept": "application/json"
     }
     
-    # Let's request the maximum block of active buses
     params = {
-        "$limit": 1000
+        "$limit": 1500  # Pull large batch to sweep entire active transit grid
     }
     
     try:
@@ -39,60 +38,57 @@ def fetch_live_bus_positions():
 
 def process_and_map(bus_data):
     if not bus_data:
-        print("No data to map.")
+        print("No telemetry data retrieved.")
         return
 
     heatmap_points = []
     
     for bus in bus_data:
         try:
-            # Safely grab metrics
+            # Extract position and vector speed (API values are typically strings)
             lat = float(bus.get("latitude"))
             lon = float(bus.get("longitude"))
-            speed = float(bus.get("speed", 0))  # Provided typically in m/s or km/h depending on source schema
+            speed = float(bus.get("speed", 0)) 
             
-            # --- FILTERS ---
-            # 1. Filter out GPS Bounce (Physically impossible city transit speeds)
+            # --- TELEMETRY FILTERS ---
+            # 1. GPS Bounce / Anomaly Filter (Ignore impossible transit speeds)
             if speed > 110: 
                 continue
                 
-            # 2. Filter out Bus Stops / Dwell Times
-            # If speed is practically zero, it's likely boarding passengers rather than trapped in traffic
-            if speed < 2.0:
+            # 2. Bus Stop / Dwell Filter (Ignore values under ~7 km/h to isolate actual road congestion)
+            if speed < 7.0:
                 continue
                 
-            # 3. Congestion Weight Calculation
-            # Slow speeds (but moving) indicate heavy traffic. 
-            # We give higher weight intensity to moving buses that are crawling.
-            if speed < 15:
-                intensity = 1.0  # Heavy traffic congestion
-            elif speed < 30:
-                intensity = 0.6  # Moderate delays
+            # 3. Congestion Weight Calculation (Slower moving vehicles get a heavier red heat profile)
+            if speed < 20:
+                intensity = 1.0  # Slow crawling traffic bottleneck
+            elif speed < 40:
+                intensity = 0.6  # Delayed movement
             else:
-                intensity = 0.2  # Free flowing
+                intensity = 0.2  # Nominal velocity profile
                 
             heatmap_points.append([lat, lon, intensity])
             
         except (ValueError, TypeError):
-            # Skip rows missing clean coordinates or speed values
             continue
 
-    # Center map on Edmonton coordinates
+    # Center map coordinates over Edmonton
     edmonton_map = folium.Map(location=[53.5461, -113.4938], zoom_start=11, tiles="cartodbpositron")
     
-    # Generate HeatMap Layer
-    HeatMap(
-        data=heatmap_points,
-        radius=15,
-        max_zoom=13,
-        blur=10,
-        gradient={0.2: 'blue', 0.4: 'lime', 0.6: 'orange', 1.0: 'red'}
-    ).add_to(edmonton_map)
+    # Render HeatMap Layer matching the attached template styles
+    if heatmap_points:
+        HeatMap(
+            data=heatmap_points,
+            radius=15,
+            max_zoom=13,
+            blur=10,
+            gradient={0.2: 'blue', 0.4: 'lime', 0.6: 'orange', 1.0: 'red'}
+        ).add_to(edmonton_map)
     
-    # Save output to index.html
+    # Save output directly to index.html
     edmonton_map.save("index.html")
-    print(f"Success: Processed {len(heatmap_points)} valid data probes into index.html heatmap.")
+    print(f"Success: Mapped {len(heatmap_points)} actively rolling vehicles to index.html.")
 
 if __name__ == "__main__":
-    raw_data = fetch_live_bus_positions()
-    process_and_map(raw_data)
+    raw_positions = fetch_live_bus_positions()
+    process_and_map(raw_positions)
