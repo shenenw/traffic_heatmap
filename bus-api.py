@@ -1,81 +1,73 @@
 # File: bus-api.py
 # Date: June 10, 2026
 # Name: pkd
-# Description: Fetches real-time ETS bus positions, filters stopped/errant data, 
+# Description: Fetches GTFS-RT bus positions, filters stopped/errant data, 
 #              and generates an interactive HTML traffic intensity heatmap.
 
-import os
 import requests
 import folium
 from folium.plugins import HeatMap
+from google.transit import gtfs_realtime_pb2
 
 def fetch_live_bus_positions():
-    # Target: Edmonton Real-Time Transit Vehicle Positions API
-    url = "https://data.edmonton.ca/resource/tm6k-66g3.json"
-    MY_EDMONTON_APP_TOKEN = os.environ.get("EDMONTON_APP_TOKEN")
-    
-    if not MY_EDMONTON_APP_TOKEN:
-        print("Error: EDMONTON_APP_TOKEN environment variable is not set.")
-        return None
-        
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)",
-        "X-App-Token": MY_EDMONTON_APP_TOKEN,
-        "Accept": "application/json"
-    }
-    
-    params = {
-        "$limit": 1500  # Pull large batch to sweep entire active transit grid
-    }
+    # Edmonton's official GTFS-Realtime endpoint (No API key required)
+    url = "http://gtfs.edmonton.ca/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
     
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=12)
+        response = requests.get(url, timeout=15)
         response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"API Fetch Error: {e}")
+        
+        # Parse the binary Protocol Buffer data into a readable feed
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(response.content)
+        return feed.entity
+    except Exception as e:
+        print(f"GTFS API Fetch Error: {e}")
         return None
 
-def process_and_map(bus_data):
-    if not bus_data:
+def process_and_map(entities):
+    if not entities:
         print("No telemetry data retrieved.")
         return
 
     heatmap_points = []
     
-    for bus in bus_data:
-        try:
-            # Extract position and vector speed (API values are typically strings)
-            lat = float(bus.get("latitude"))
-            lon = float(bus.get("longitude"))
-            speed = float(bus.get("speed", 0)) 
-            
-            # --- TELEMETRY FILTERS ---
-            # 1. GPS Bounce / Anomaly Filter (Ignore impossible transit speeds)
-            if speed > 110: 
-                continue
-                
-            # 2. Bus Stop / Dwell Filter (Ignore values under ~7 km/h to isolate actual road congestion)
-            if speed < 7.0:
-                continue
-                
-            # 3. Congestion Weight Calculation (Slower moving vehicles get a heavier red heat profile)
-            if speed < 20:
-                intensity = 1.0  # Slow crawling traffic bottleneck
-            elif speed < 40:
-                intensity = 0.6  # Delayed movement
-            else:
-                intensity = 0.2  # Nominal velocity profile
-                
-            heatmap_points.append([lat, lon, intensity])
-            
-        except (ValueError, TypeError):
+    for entity in entities:
+        # Ensure the data point is a vehicle and has GPS coordinates
+        if not entity.HasField('vehicle') or not entity.vehicle.HasField('position'):
             continue
+            
+        pos = entity.vehicle.position
+        
+        # GTFS-RT speed is natively in meters per second. Convert to km/h.
+        speed_ms = pos.speed if pos.HasField('speed') else 0
+        speed_kmh = speed_ms * 3.6
+        
+        lat = pos.latitude
+        lon = pos.longitude
+        
+        # --- TELEMETRY FILTERS ---
+        # 1. GPS Bounce / Anomaly Filter (Ignore impossible speeds)
+        if speed_kmh > 110:
+            continue
+            
+        # 2. Bus Stop / Dwell Filter (Ignore values under 7 km/h)
+        if speed_kmh < 7.0:
+            continue
+            
+        # 3. Congestion Weight Calculation
+        if speed_kmh < 20:
+            intensity = 1.0  # Slow crawling traffic bottleneck
+        elif speed_kmh < 40:
+            intensity = 0.6  # Delayed movement
+        else:
+            intensity = 0.2  # Nominal velocity profile
+            
+        heatmap_points.append([lat, lon, intensity])
 
     # Center map coordinates over Edmonton
     edmonton_map = folium.Map(location=[53.5461, -113.4938], zoom_start=11, tiles="cartodbpositron")
     
-    # Render HeatMap Layer matching the attached template styles
     if heatmap_points:
         HeatMap(
             data=heatmap_points,
