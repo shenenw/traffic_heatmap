@@ -4,8 +4,8 @@
 # Author: Gemini
 # Description: Collects real-time bus positions, computes speed-based discrete colors,
 #              maintains a cyclic history, and generates a time-slid marker map (index.html).
-#              Features auto-migration for old 'weight' formats and a highly resilient,
-#              non-wrapping responsive mobile control bar layout.
+#              Fixed to resolve disappearing legends, TimeDimension slider crashes,
+#              and flexible cron intervals.
 
 import os
 import json
@@ -24,17 +24,15 @@ from folium.plugins import TimestampedGeoJson
 DATA_LOG_FILE = "bus_realtime_history.json"
 OUTPUT_HTML_FILE = "index.html"
 
-TOTAL_SAMPLES = 24            # Keep last 24 hourly snapshots (1 day)
-SUB_SAMPLE_INTERVAL = 10      # Seconds between two API fetches (for Delta‑T)
-MAX_ACCELERATION = 1.8        # Max plausible acceleration (m/s²)
+TOTAL_SAMPLES = 24            
+SUB_SAMPLE_INTERVAL = 10      
+MAX_ACCELERATION = 1.8        
 
-# Email settings – set these as environment variables (or replace with hardcoded values)
 EMAIL_FROM = os.environ.get("EMAIL_FROM")           
 EMAIL_TO = os.environ.get("EMAIL_TO")               
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")   
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-
 # -----------------------------------
 
 def fetch_live_bus_positions():
@@ -83,7 +81,6 @@ def parse_and_filter_snapshot(entities, previous_speeds):
         lat = pos.latitude
         lon = pos.longitude
         
-        # Edmonton Boundary Speed Clamps
         is_on_freeway = (53.45 < lat < 53.49) or (53.57 < lat < 53.62) or (lon < -113.62) or (lon > -113.38)
         if is_on_freeway:
             if speed_kmh > 90.0 or speed_kmh < 7.0:
@@ -92,19 +89,17 @@ def parse_and_filter_snapshot(entities, previous_speeds):
             if speed_kmh > 70.0 or speed_kmh < 7.0:
                 continue
 
-        # Delta-T Acceleration Check
         if previous_speeds and vehicle_id in previous_speeds:
             prev_speed_ms = previous_speeds[vehicle_id]
             if (abs(speed_ms - prev_speed_ms) / SUB_SAMPLE_INTERVAL) > MAX_ACCELERATION:
                 continue
 
-        # Map speed thresholds explicitly to hex colors
         if speed_kmh < 20.0:
-            color_hex = "#FF0000"  # Red
+            color_hex = "#FF0000"  
         elif speed_kmh < 40.0:
-            color_hex = "#00FF00"  # Lime
+            color_hex = "#00FF00"  
         else:
-            color_hex = "#0000FF"  # Blue
+            color_hex = "#0000FF"  
         
         valid_points.append({
             "lat": lat, 
@@ -123,7 +118,6 @@ def load_existing_history():
         
         sorted_data = OrderedDict(sorted(data.items()))
         
-        # On-the-fly migration for old history entries containing 'weight' logs
         for timestamp, points in sorted_data.items():
             migrated_points = []
             for p in points:
@@ -183,11 +177,10 @@ def generate_heatmap(history, output_file):
         'features': features
     }
 
-    # Use TimestampedGeoJson with default 1fps (1000ms transition) and auto-play
+    # Removed period='PT1H' to prevent JS parsing crashes when cron drops or delays
     TimestampedGeoJson(
         feature_collection,
-        period='PT1H',
-        duration='PT1H',
+        duration='PT1H', 
         add_last_point=True,
         auto_play=True,
         loop=True,
@@ -195,12 +188,12 @@ def generate_heatmap(history, output_file):
         loop_button=True,
         date_options='YYYY-MM-DD HH:mm:ss',
         time_slider_drag_update=True,
-        transition_time=1000 # 1000ms = 1 frame per second
+        transition_time=1000 
     ).add_to(m)
 
-    # Flexbox-aligned Speed range Legend Box layout
+    # Increased z-index significantly to ensure visibility over Leaflet map panes
     legend_html = '''
-    <div class="custom-speed-legend" style="position: fixed; bottom: 155px; left: 12px; width: 140px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #bbb; z-index: 9999; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; padding: 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); pointer-events: none; box-sizing: border-box;">
+    <div class="custom-speed-legend" style="position: fixed; bottom: 155px; left: 12px; width: 140px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #bbb; z-index: 999999; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; padding: 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); pointer-events: none; box-sizing: border-box;">
         <b style="display: block; margin-bottom: 6px; font-size: 13px; color: #222;">Bus Speed</b>
         <div style="display: flex; align-items: center; margin-bottom: 5px; line-height: 1;">
             <span style="background: #FF0000; width: 16px; height: 10px; display: block; border-radius: 2px; margin-right: 6px; flex-shrink: 0;"></span>
@@ -217,7 +210,6 @@ def generate_heatmap(history, output_file):
     </div>
     '''
     
-    # Execution safety fallback script to assert play state and loop state
     custom_ui_html = '''
     <script>
         window.addEventListener('load', function() {
@@ -299,15 +291,13 @@ def fix_heatmap_ui(html_file):
         html = html.replace(" + 'fps'", " + ' x Speed'")
         html = html.replace(" + \"fps\"", " + \" x Speed\"")
 
-        # Refactored CSS specifically targeted at zero inner borders, unified background, perfect date centering and scaled layout
         custom_css = """
         <style>
             :root {
-                --ui-font-size: 18px;       /* Scaled up 15% from 16px */
-                --ctrl-height: 54px;        /* Scaled up 15% from 46px */
+                --ui-font-size: 18px;       
+                --ctrl-height: 54px;        
             }
 
-            /* Reset all inner elements to transparent background, remove borders, radii, shadows, and margins */
             .leaflet-control.timecontrol * {
                 background-color: transparent !important;
                 border: none !important;
@@ -318,28 +308,26 @@ def fix_heatmap_ui(html_file):
                 box-sizing: border-box !important;
             }
 
-            /* Main Unified Layout Container (Desktop, Scaled 15% larger) */
             .leaflet-control.timecontrol,
             .leaflet-bar.timecontrol {
-                background-color: #ffffff !important; /* Unified solid background */
-                border: 1px solid #777777 !important; /* Unified high-contrast outer border */
+                background-color: #ffffff !important; 
+                border: 1px solid #777777 !important; 
                 border-radius: 10px !important;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
                 
                 display: flex !important;
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;        
-                align-items: center !important;      /* Perfect vertical center alignment */
+                align-items: center !important;      
                 justify-content: flex-start !important;
-                gap: 16px !important;                /* Increased spacing */
+                gap: 16px !important;                
                 box-sizing: border-box !important;
                 height: var(--ctrl-height) !important;
-                padding: 0 16px !important;          /* Increased padding */
+                padding: 0 16px !important;          
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
                 font-size: var(--ui-font-size) !important;
             }
             
-            /* Container for playback buttons */
             .leaflet-control.timecontrol .leaflet-bar-timecontrol {
                 display: inline-flex !important;
                 flex-direction: row !important;
@@ -348,22 +336,20 @@ def fix_heatmap_ui(html_file):
                 gap: 8px !important;
             }
             
-            /* Playback Button Alignment & Scaling */
             .leaflet-control.timecontrol a.leaflet-bar-timecontrol,
             .leaflet-control.timecontrol .leaflet-bar-timecontrol a,
             .leaflet-control.timecontrol .timecontrol-loop {
-                width: 42px !important;     /* Scaled up from 35px */
-                height: 100% !important;    /* Full height of the parent container to keep them vertically centered */
+                width: 42px !important;     
+                height: 100% !important;    
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 color: #222 !important;
                 background: transparent !important;
                 text-decoration: none !important;
-                float: none !important;      /* Eliminate float offsets */
+                float: none !important;      
             }
 
-            /* Center glyph/font icons inside the buttons */
             .leaflet-control.timecontrol a.leaflet-bar-timecontrol::before,
             .leaflet-control.timecontrol .leaflet-bar-timecontrol a::before,
             .leaflet-control.timecontrol .timecontrol-loop::before {
@@ -372,10 +358,9 @@ def fix_heatmap_ui(html_file):
                 justify-content: center !important;
                 height: 100% !important;
                 line-height: 1 !important;
-                font-size: 19px !important;  /* Scaled up from 16px */
+                font-size: 19px !important;  
             }
 
-            /* Absolute Vertical Centering & Scaling for Date & Time Text */
             .leaflet-control.timecontrol .timecontrol-date,
             .leaflet-control.timecontrol .timecontrol-date * {
                 font-size: var(--ui-font-size) !important;
@@ -387,11 +372,10 @@ def fix_heatmap_ui(html_file):
                 justify-content: center !important;
                 height: 100% !important;
                 line-height: 1 !important;
-                position: static !important; /* Overrides absolute position shifts */
+                position: static !important; 
                 transform: none !important;
             }
 
-            /* Speed text container and indicator alignment & Scaling */
             .leaflet-control.timecontrol .timecontrol-speed,
             .leaflet-control.timecontrol .timecontrol-speed * {
                 font-size: var(--ui-font-size) !important;
@@ -406,21 +390,19 @@ def fix_heatmap_ui(html_file):
             }
 
             .leaflet-control.timecontrol .timecontrol-speed {
-                padding-left: 32px !important; /* Scaled up from 28px */
+                padding-left: 32px !important; 
                 background-position: left center !important;
-                background-size: 21px 21px !important; /* Scaled up from 18px */
+                background-size: 21px 21px !important; 
             }
 
-            /* Slider Alignment Wrappers */
             .leaflet-control.timecontrol .timecontrol-slider {
                 display: inline-flex !important;
                 align-items: center !important;
-                flex-grow: 2 !important;     /* Assign priority space for main time slider */
+                flex-grow: 2 !important;     
                 height: 100% !important;
                 margin: 0 4px !important;
             }
 
-            /* Cross-browser range input resets to restore track color and height */
             .timecontrol input[type="range"] {
                 -webkit-appearance: none !important;
                 -moz-appearance: none !important;
@@ -428,20 +410,18 @@ def fix_heatmap_ui(html_file):
                 background: #ccc !important;
                 border: none !important;
                 border-radius: 4px !important;
-                height: 8px !important;      /* Scaled up from 6px */
+                height: 8px !important;      
                 outline: none !important;
                 vertical-align: middle !important;
                 flex-grow: 1 !important;
             }
 
-            /* Precise FPS speed slider on desktop (360px wide) */
             .leaflet-control.timecontrol .timecontrol-speed input[type="range"] {
-                width: 360px !important;      /* Maintain 360px for high precision speed tuning */
+                width: 360px !important;      
                 min-width: 360px !important;
-                flex-grow: 0 !important;      /* Maintain exact dimension */
+                flex-grow: 0 !important;      
             }
 
-            /* Slider track resets for Webkit & Firefox */
             .timecontrol input[type="range"]::-webkit-slider-runnable-track {
                 background: transparent !important;
                 border: none !important;
@@ -453,12 +433,11 @@ def fix_heatmap_ui(html_file):
                 box-shadow: none !important;
             }
 
-            /* Consistent circular slider thumbs */
             .timecontrol input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none !important;
                 appearance: none !important;
-                width: 18px !important;     /* Scaled up from 14px */
-                height: 18px !important;    /* Scaled up from 14px */
+                width: 18px !important;     
+                height: 18px !important;    
                 border-radius: 50% !important;
                 background: #444 !important;
                 border: none !important;
@@ -467,15 +446,14 @@ def fix_heatmap_ui(html_file):
             }
             
             .timecontrol input[type="range"]::-moz-range-thumb {
-                width: 18px !important;     /* Scaled up from 14px */
-                height: 18px !important;    /* Scaled up from 14px */
+                width: 18px !important;     
+                height: 18px !important;    
                 border: none !important;
                 border-radius: 50% !important;
                 background: #444 !important;
                 cursor: pointer !important;
             }
 
-            /* LIQUID GRID RECONSTRUCTION SHIFTS CONTROLS BELOW FLOATING LEGEND ON MOBILE */
             @media (max-width: 860px) {
                 :root {
                     --ui-font-size: 12px !important;
