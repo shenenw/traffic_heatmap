@@ -1,3 +1,7 @@
+# File: .github/workflows/collect-realtime.yml
+# Date: 2026-06-12
+# Description: Automated hourly bus data collection and Git sync for Cloudflare Pages tracking.
+
 name: Collect Realtime Bus
 on:
   schedule:
@@ -17,14 +21,15 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/checkout@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests folium python-dotenv branca jinja2 gtfs-realtime-bindings
+        pip install requests folium python-dotenv branca jinja2 gtfs-realtime-bindings protobuf
+
     - name: Run data collection script
       env:
         # Passes your secret email credentials securely into the script environment
