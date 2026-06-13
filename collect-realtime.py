@@ -171,7 +171,7 @@ def generate_heatmap(history, output_file):
     custom_ui_html = '''
     <style>
     .leaflet-control-timecontrol { transform: scale(1.2); transform-origin: bottom left; margin-bottom: 20px !important; margin-left: 20px !important; }
-    .timecontrol-date, .timecontrol-speed, .leaflet-bar-timecontrol a { font-size: 11px !important; font-weight: normal !important; color: #000 !important; }
+    .timecontrol-date, .timecontrol-speed, .leaflet-bar-timecontrol a { font-size: 14px !important; font-weight: normal !important; color: #000 !important; }
     </style>
     <script>
         window.addEventListener('load', function() {
@@ -243,31 +243,53 @@ def collect_one_sample():
     return timestamp_str, clean_points
     
 def fix_heatmap_ui(html_file):
-    """Post-processes the Folium HTML to fix the control bar size and labels."""
     try:
         with open(html_file, 'r', encoding='utf-8') as f:
             html = f.read()
             
-        # 1. Change the confusing 'fps' label to 'x Speed'
         html = html.replace(" + 'fps'", " + 'x Speed'")
         html = html.replace(" + \"fps\"", " + \"x Speed\"")
         
-        # 2. Inject custom CSS to fix the massive empty area
+        # Updated CSS injected below
         custom_css = """
         <style>
             /* Compact the HeatMapWithTime control bar */
             .leaflet-control.timecontrol {
                 background-color: rgba(255, 255, 255, 0.9) !important;
-                padding: 10px 20px !important;
+                padding: 6px 15px !important; /* Reduced top/bottom padding */
                 border-radius: 8px !important;
                 box-shadow: 0 1px 5px rgba(0,0,0,0.4) !important;
-                max-width: 450px !important; /* Constrains the width to remove empty space */
+                max-width: 600px !important; 
                 margin-left: auto !important;
                 margin-right: auto !important;
                 margin-bottom: 20px !important;
+                
+                /* Force precise vertical centering */
+                display: flex !important;
+                align-items: center !important;
+                height: auto !important;
             }
+            
+            /* Remove innate line-heights and margins pushing text up */
+            .timecontrol-date, .timecontrol-speed, .timecontrol-play {
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 1 !important;
+                display: flex !important;
+                align-items: center !important;
+            }
+
+            /* Adjust the SVG icons to prevent them from expanding container height */
             .timecontrol svg {
-                max-height: 45px !important; /* Prevents vertical stretching */
+                max-height: 22px !important; 
+                margin: 0 !important;
+                display: block !important;
+            }
+            
+            /* Horizontally space the sliders */
+            .timecontrol input[type="range"] {
+                margin: 0 10px !important;
+                vertical-align: middle !important;
             }
         </style>
         """
