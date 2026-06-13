@@ -4,7 +4,7 @@
 # Description: Collects bus position samples, maintains a cyclic JSON buffer,
 #              generates an HTML heatmap (index.html) with a time slider,
 #              a floating speed color legend, a responsive looping player bar,
-#              and emails the live link. UI optimized for mobile scaling.
+#              and emails the live link. UI optimized for mobile scaling with centered dock.
 
 import os
 import json
@@ -156,7 +156,7 @@ def generate_heatmap(history, output_file):
             max_opacity=0.85
         ).add_to(m)
 
-    # 1. Legend Box (Relocated to top-right and converted to fluid scaling)
+    # 1. Legend Box
     legend_html = '''
     <div class="custom-speed-legend" style="position: fixed; top: 15px; right: 15px; background-color: rgba(255, 255, 255, 0.9); border: 2px solid #999; z-index: 9999; font-size: clamp(12px, 3vw, 15px); font-family: Arial, sans-serif; padding: clamp(8px, 2vw, 12px); border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
         <b style="display: block; margin-bottom: 5px; font-size: 1.1em;">Bus Speed Range</b>
@@ -171,7 +171,6 @@ def generate_heatmap(history, output_file):
     <script>
         window.addEventListener('load', function() {
             setTimeout(function() {
-                // Find all time dimension players and force loop
                 var players = document.querySelectorAll('.timecontrol-loop');
                 if (players.length > 0) {
                     players.forEach(function(p) { p.click(); });
@@ -238,18 +237,13 @@ def collect_one_sample():
     return timestamp_str, clean_points
     
 def fix_heatmap_ui(html_file):
-    """Post-processes the Folium HTML to inject an extra upscaled, screen-responsive CSS layout
-    with layout spacing fixes to prevent the clock icon from overlapping the speed label.
-    """
     try:
         with open(html_file, "r", encoding="utf-8") as f:
             html = f.read()
 
-        # 1. Change the confusing 'fps' label to 'x Speed' (Added a space before x)
         html = html.replace(" + 'fps'", " + ' x Speed'")
         html = html.replace(" + \"fps\"", " + \" x Speed\"")
 
-        # 2. Inject modern responsive CSS override system with upscaled properties
         custom_css = """
         <style>
             :root {
@@ -355,33 +349,46 @@ def fix_heatmap_ui(html_file):
 
             /* 6. MEDIA QUERIES FOR SMALL TOUCH DEVICE SCREENS */
             @media (max-width: 860px) {
+                /* Stack elements vertically and center everything */
                 .leaflet-control.timecontrol {
-                    padding: 12px 10px !important;
+                    padding: 12px !important;
                     gap: 8px !important;
-                    flex-wrap: wrap !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    width: 100% !important;
+                }
+                .leaflet-bar-timecontrol {
+                    width: 100% !important;
                     justify-content: center !important;
                 }
-                /* Force Date to its own row spanning 100% to create a clean stack */
                 .timecontrol-date {
                     width: 100% !important;
                     justify-content: center !important;
                     font-size: 15px !important;
                     font-weight: bold !important;
-                    margin-bottom: 4px !important;
+                    margin: 2px 0 !important;
                 }
                 .timecontrol-speed {
+                    width: 100% !important;
+                    justify-content: center !important;
                     font-size: 14px !important;
                     padding-left: 22px !important; 
                     background-size: 16px 16px !important;
                 }
                 .timecontrol input[type="range"] {
-                    min-width: 70px !important;
-                    max-width: 40vw !important; /* Allow the slider to shrink fluidly */
+                    width: 100% !important;
+                    max-width: 200px !important; /* Cap slider width so it doesn't push edges */
                 }
+                
+                /* Lift the bar above the attribution watermark and center it like a dock */
                 .leaflet-bottom.leaflet-left {
-                    left: 5px !important;
-                    bottom: 5px !important;
-                    width: calc(100% - 10px) !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
+                    bottom: 25px !important;
+                    width: 90vw !important;
+                    max-width: 350px !important;
+                    display: flex;
+                    justify-content: center;
                 }
             }
         </style>
@@ -410,7 +417,6 @@ def main():
     save_history(history)
     
     if generate_heatmap(history, OUTPUT_HTML_FILE):
-        # Apply the layout and UI fixes cleanly
         fix_heatmap_ui(OUTPUT_HTML_FILE)
         send_email_with_link()
 
