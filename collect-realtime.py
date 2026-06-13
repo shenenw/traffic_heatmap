@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # File: collect-realtime.py
 # Date: 2026-06-13
+# Author: Gemini
 # Description: Collects bus position samples, maintains a cyclic JSON buffer,
 #              generates an HTML heatmap (index.html) with a time slider,
 #              a floating speed color legend, a responsive looping player bar,
-#              and emails the live link. UI optimized for mobile scaling with centered dock.
+#              and emails the live link. CSS strictly limits max viewport width.
 
 import os
 import json
@@ -124,12 +125,10 @@ def save_history(history):
         json.dump(dict(history), f, indent=2)
 
 def generate_heatmap(history, output_file):
-    """Generates an optimized heatmap with an integrated auto-looping script."""
     if not history:
         print("No data to generate heatmap.")
         return False
 
-    # Center on Edmonton
     center_lat, center_lon = 53.5461, -113.4938
     m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
 
@@ -156,17 +155,15 @@ def generate_heatmap(history, output_file):
             max_opacity=0.85
         ).add_to(m)
 
-    # 1. Legend Box
     legend_html = '''
-    <div class="custom-speed-legend" style="position: fixed; top: 15px; right: 15px; background-color: rgba(255, 255, 255, 0.9); border: 2px solid #999; z-index: 9999; font-size: clamp(12px, 3vw, 15px); font-family: Arial, sans-serif; padding: clamp(8px, 2vw, 12px); border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
-        <b style="display: block; margin-bottom: 5px; font-size: 1.1em;">Bus Speed Range</b>
-        <div style="margin-bottom: 3px;"><span style="background: red; width: 1.5em; height: 0.8em; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &lt; 20 km/h</div>
-        <div style="margin-bottom: 3px;"><span style="background: lime; width: 1.5em; height: 0.8em; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> 20 - 40 km/h</div>
-        <div><span style="background: blue; width: 1.5em; height: 0.8em; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &gt; 40 km/h</div>
+    <div class="custom-speed-legend" style="position: fixed; bottom: 140px; left: 10px; width: 140px; height: 100px; background-color: rgba(255, 255, 255, 0.95); border: 2px solid #999; z-index: 9999; font-size: 13px; font-family: Arial, sans-serif; padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
+        <b style="display: block; margin-bottom: 5px;">Speed Indicator</b>
+        <div style="margin-bottom: 3px;"><span style="background: red; width: 16px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &lt; 20 km/h</div>
+        <div style="margin-bottom: 3px;"><span style="background: lime; width: 16px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> 20 - 40 km/h</div>
+        <div><span style="background: blue; width: 16px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &gt; 40 km/h</div>
     </div>
     '''
     
-    # 2. Force-Loop Script
     custom_ui_html = '''
     <script>
         window.addEventListener('load', function() {
@@ -247,91 +244,58 @@ def fix_heatmap_ui(html_file):
         custom_css = """
         <style>
             :root {
-                --base-font-size: 18.5px;    
-                --button-size: 32px;         
-                --container-max-width: 850px;
+                --base-font-size: 16px;    
+                --button-size: 30px;         
             }
 
-            /* 1. RESPONSIVE CONTAINER */
+            /* Main Responsive Container */
             .leaflet-control.timecontrol {
                 background-color: rgba(255, 255, 255, 0.95) !important;
-                padding: 10px 20px !important;
+                padding: 10px !important;
                 border-radius: 8px !important;
                 box-shadow: 0 3px 10px rgba(0,0,0,0.35) !important;
-                
                 display: flex !important;
-                flex-wrap: nowrap !important;        
+                flex-wrap: wrap !important;        
                 align-items: center !important;
                 justify-content: center !important;
-                gap: 14px !important;                 
-                
-                width: calc(100% - 20px) !important;
-                max-width: var(--container-max-width) !important;
-                height: auto !important;
-                margin: 0 auto 15px auto !important;
+                gap: 10px !important;                 
                 box-sizing: border-box !important;
             }
             
-            /* 2. TARGETED TYPOGRAPHY */
             .timecontrol-date, 
             .timecontrol-speed {
                 font-size: var(--base-font-size) !important;
                 font-family: Arial, sans-serif !important;
-                font-weight: normal !important;
                 color: #000 !important;
-                line-height: 1.2 !important;
-                display: inline-flex !important;
-                align-items: center !important;
                 white-space: nowrap !important;
             }
 
-            /* 3. FIX OVERLAPPING SPEED LOGO */
             .timecontrol-speed {
-                padding-left: 28px !important;               
+                padding-left: 24px !important;               
                 background-position: left center !important; 
-                background-size: 20px 20px !important;       
+                background-size: 18px 18px !important;       
             }
             
-            .timecontrol-speed::before {
-                margin-right: 8px !important;
-            }
-            
-            /* 4. ALIGN CONTROL BUTTONS ACCURATELY */
             .leaflet-bar-timecontrol {
                 display: inline-flex !important;
                 align-items: center !important;
-                margin: 0 !important;
                 border: none !important;
-                height: var(--button-size) !important;
             }
             
             .leaflet-bar-timecontrol a {
+                width: var(--button-size) !important;
+                height: var(--button-size) !important;
+                font-size: 14px !important;
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                width: var(--button-size) !important;
-                height: var(--button-size) !important;
-                font-size: calc(var(--base-font-size) - 2px) !important;
-                border: none !important;
-                background: transparent !important;
                 color: #333 !important;
                 text-decoration: none !important;
             }
-            
-            .leaflet-bar-timecontrol a:hover {
-                background: rgba(0, 0, 0, 0.08) !important;
-                border-radius: 4px !important;
-            }
 
-            /* 5. BALANCED METRIC SLIDER TRACKS */
+            /* Sliders */
             .timecontrol input[type="range"] {
-                display: inline-block !important;
                 height: 6px !important;
-                flex-grow: 1 !important;
-                min-width: 110px !important;
-                max-width: 220px !important;
-                padding: 0 !important;
-                margin: 0 8px !important;
                 background: #ccc !important;
                 border-radius: 3px !important;
                 outline: none !important;
@@ -344,51 +308,41 @@ def fix_heatmap_ui(html_file):
                 height: 16px !important;
                 border-radius: 50% !important;
                 background: #333 !important;
-                cursor: pointer !important;
             }
 
-            /* 6. MEDIA QUERIES FOR SMALL TOUCH DEVICE SCREENS */
+            /* STRICT MOBILE OVERRIDES TO PREVENT RIGHT-EDGE CUTOFF */
             @media (max-width: 860px) {
-                /* Stack elements vertically and center everything */
-                .leaflet-control.timecontrol {
-                    padding: 12px !important;
-                    gap: 8px !important;
-                    flex-direction: column !important;
-                    align-items: center !important;
-                    width: 100% !important;
-                }
-                .leaflet-bar-timecontrol {
-                    width: 100% !important;
+                .leaflet-bottom.leaflet-left {
+                    /* Detach from Folium's standard grid to prevent parent container overflow */
+                    position: fixed !important;
+                    bottom: 10px !important;
+                    left: 2.5vw !important; /* 2.5vw margin on left + right = 5vw */
+                    width: 95vw !important; /* Strictly lock to 95% screen width */
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    display: flex !important;
                     justify-content: center !important;
-                }
-                .timecontrol-date {
-                    width: 100% !important;
-                    justify-content: center !important;
-                    font-size: 15px !important;
-                    font-weight: bold !important;
-                    margin: 2px 0 !important;
-                }
-                .timecontrol-speed {
-                    width: 100% !important;
-                    justify-content: center !important;
-                    font-size: 14px !important;
-                    padding-left: 22px !important; 
-                    background-size: 16px 16px !important;
-                }
-                .timecontrol input[type="range"] {
-                    width: 100% !important;
-                    max-width: 200px !important; /* Cap slider width so it doesn't push edges */
                 }
                 
-                /* Lift the bar above the attribution watermark and center it like a dock */
-                .leaflet-bottom.leaflet-left {
-                    left: 50% !important;
-                    transform: translateX(-50%) !important;
-                    bottom: 25px !important;
-                    width: 90vw !important;
-                    max-width: 350px !important;
-                    display: flex;
-                    justify-content: center;
+                .leaflet-control.timecontrol {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    padding: 8px !important;
+                    gap: 5px !important;
+                }
+
+                /* Shrink inner components relative to screen size */
+                .timecontrol input[type="range"] {
+                    width: 25vw !important; /* Base size on screen width, not pixels */
+                    min-width: 60px !important;
+                    max-width: 120px !important;
+                }
+                
+                .timecontrol-date { font-size: 14px !important; font-weight: bold !important; width: 100%; text-align: center; }
+                .timecontrol-speed { font-size: 13px !important; }
+                
+                .custom-speed-legend {
+                    bottom: 120px !important;
                 }
             }
         </style>
