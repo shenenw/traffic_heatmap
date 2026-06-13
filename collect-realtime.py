@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-# File: collect-realtime.py (cron + email)
+# File: collect-realtime.py
+# Date: 2026-06-12
 # Description: Collects one bus position sample, maintains a cyclic JSON buffer,
-#              generates an HTML heatmap (index.html), and emails it.
-#              Designed to be run hourly from cron.
+#              generates an HTML heatmap (index.html), and emails a live link 
+#              to the Cloudflare deployment instead of an attachment.
+#              Designed to be run hourly from cron / GitHub Actions.
 
 import os
 import json
@@ -11,8 +13,6 @@ import smtplib
 import requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from collections import OrderedDict
@@ -133,18 +133,14 @@ def generate_heatmap(history, output_file):
     center_lat, center_lon = 53.5461, -113.4938
     m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
 
-    # Prepare data for HeatMapWithTime: list of lists of [lat, lon, weight]
-    # Also extract timestamps for the slider labels
     time_data = []
     time_index = []
     for timestamp, points in history.items():
         if points:
-            # Each point: [lat, lon, weight]
             heat_points = [[p["lat"], p["lon"], p["weight"]] for p in points]
             time_data.append(heat_points)
             time_index.append(timestamp)
         else:
-            # Empty snapshot – still need an entry to keep indices aligned
             time_data.append([])
             time_index.append(timestamp)
 
@@ -155,14 +151,23 @@ def generate_heatmap(history, output_file):
     print(f"Heatmap saved to {output_file}")
     return True
 
-def send_email_with_attachment(attachment_path):
-    """Send an email with the HTML file attached."""
+def send_email_with_link():
+    """Send an hourly email notification containing the live link instead of an attachment."""
     if not all([EMAIL_FROM, EMAIL_TO, EMAIL_PASSWORD, SMTP_SERVER]):
         print("Email credentials not set. Skipping email.")
         return False
 
-    subject = f"Bus Data Snapshot - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    body = f"Attached is the latest bus heatmap (hourly snapshot).\nBuffer contains up to {TOTAL_SAMPLES} snapshots."
+    cloudflare_url = "https://traffic-heatmap.shenenwang.workers.dev/"
+    subject = f"Bus Traffic Heatmap Updated - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    
+    body = f"""Hello,
+
+The latest bus traffic data snapshot has been successfully collected and compiled.
+
+You can view the real-time interactive heatmap on your Cloudflare dashboard here:
+{cloudflare_url}
+
+The rolling tracking buffer currently retains history for up to the last {TOTAL_SAMPLES} hours."""
 
     msg = MIMEMultipart()
     msg['From'] = EMAIL_FROM
@@ -170,25 +175,13 @@ def send_email_with_attachment(attachment_path):
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'plain'))
 
-    # Attach the HTML file
-    try:
-        with open(attachment_path, "rb") as attachment:
-            part = MIMEBase('application', 'octet-stream')
-            part.set_payload(attachment.read())
-            encoders.encode_base64(part)
-            part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(attachment_path)}')
-            msg.attach(part)
-    except Exception as e:
-        print(f"Failed to attach file: {e}")
-        return False
-
-    # Send email
+    # Send email via SMTP
     try:
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_FROM, EMAIL_PASSWORD)
             server.send_message(msg)
-        print(f"Email sent to {EMAIL_TO}")
+        print(f"Notification email sent to {EMAIL_TO}")
         return True
     except Exception as e:
         print(f"Email sending failed: {e}")
@@ -235,16 +228,16 @@ def main():
         del history[oldest]
         print(f"Removed oldest snapshot: {oldest}")
 
-    # Save JSON
+    # Save JSON history
     save_history(history)
     print(f"Saved JSON. Buffer now has {len(history)} snapshots.")
 
-    # Generate HTML heatmap
+    # Generate HTML heatmap locally for Git to track
     if generate_heatmap(history, OUTPUT_HTML_FILE):
-        # Send email with attachment
-        send_email_with_attachment(OUTPUT_HTML_FILE)
+        # Send clean email link notification
+        send_email_with_link()
     else:
-        print("Heatmap generation failed, skipping email.")
+        print("Heatmap generation failed, skipping email notification.")
 
     return 0
 
