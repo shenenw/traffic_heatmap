@@ -1,5 +1,4 @@
-name: Run Realtime Bus Heatmap
-
+name: Collect Realtime Bus
 on:
   schedule:
     # This runs the script automatically at the start of every hour (UTC)
