@@ -170,7 +170,7 @@ def generate_heatmap(history, output_file):
     # Increased font sizes and force-set looping on load
     custom_ui_html = '''
     <style>
-    .leaflet-control-timecontrol { transform: scale(0.9); transform-origin: bottom left; margin-bottom: 20px !important; margin-left: 20px !important; }
+    .leaflet-control-timecontrol { transform: scale(1.2); transform-origin: bottom left; margin-bottom: 20px !important; margin-left: 20px !important; }
     .timecontrol-date, .timecontrol-speed, .leaflet-bar-timecontrol a { font-size: 11px !important; font-weight: normal !important; color: #000 !important; }
     </style>
     <script>
