@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # File: collect-realtime.py
-# Date: 2026-06-12
+# Date: 2026-06-13
 # Description: Collects bus position samples, maintains a cyclic JSON buffer,
 #              generates an HTML heatmap (index.html) with a time slider,
-#              a floating speed color legend, a scaled-up looping player bar,
-#              and emails the live link. Optimized for low browser processing.
+#              a floating speed color legend, a responsive looping player bar,
+#              and emails the live link. UI optimized for mobile scaling.
 
 import os
 import json
@@ -124,7 +124,7 @@ def save_history(history):
         json.dump(dict(history), f, indent=2)
 
 def generate_heatmap(history, output_file):
-    """Generates an optimized heatmap with a scaled UI and auto-looping JavaScript injected."""
+    """Generates an optimized heatmap with an integrated auto-looping script."""
     if not history:
         print("No data to generate heatmap.")
         return False
@@ -156,23 +156,18 @@ def generate_heatmap(history, output_file):
             max_opacity=0.85
         ).add_to(m)
 
-    # 1. Legend Box (remains the same)
+    # 1. Legend Box (Relocated to top-right and converted to fluid scaling)
     legend_html = '''
-    <div style="position: fixed; bottom: 120px; left: 30px; width: 150px; height: 110px; background-color: rgba(255, 255, 255, 0.9); border: 2px solid #999; z-index: 9999; font-size: 14px; font-family: Arial, sans-serif; padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
-        <b style="display: block; margin-bottom: 5px;">Bus Speed Range</b>
-        <div style="margin-bottom: 3px;"><span style="background: red; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &lt; 20 km/h</div>
-        <div style="margin-bottom: 3px;"><span style="background: lime; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> 20 - 40 km/h</div>
-        <div><span style="background: blue; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &gt; 40 km/h</div>
+    <div class="custom-speed-legend" style="position: fixed; top: 15px; right: 15px; background-color: rgba(255, 255, 255, 0.9); border: 2px solid #999; z-index: 9999; font-size: clamp(12px, 3vw, 15px); font-family: Arial, sans-serif; padding: clamp(8px, 2vw, 12px); border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
+        <b style="display: block; margin-bottom: 5px; font-size: 1.1em;">Bus Speed Range</b>
+        <div style="margin-bottom: 3px;"><span style="background: red; width: 1.5em; height: 0.8em; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &lt; 20 km/h</div>
+        <div style="margin-bottom: 3px;"><span style="background: lime; width: 1.5em; height: 0.8em; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> 20 - 40 km/h</div>
+        <div><span style="background: blue; width: 1.5em; height: 0.8em; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &gt; 40 km/h</div>
     </div>
     '''
     
-    # 2. UI Scaler and Force-Loop Script
-    # Increased font sizes and force-set looping on load
+    # 2. Force-Loop Script
     custom_ui_html = '''
-    <style>
-    .leaflet-control-timecontrol { transform: scale(1.2); transform-origin: bottom left; margin-bottom: 20px !important; margin-left: 20px !important; }
-    .timecontrol-date, .timecontrol-speed, .leaflet-bar-timecontrol a { font-size: 14px !important; font-weight: normal !important; color: #000 !important; }
-    </style>
     <script>
         window.addEventListener('load', function() {
             setTimeout(function() {
@@ -243,64 +238,162 @@ def collect_one_sample():
     return timestamp_str, clean_points
     
 def fix_heatmap_ui(html_file):
+    """Post-processes the Folium HTML to inject an extra upscaled, screen-responsive CSS layout
+    with layout spacing fixes to prevent the clock icon from overlapping the speed label.
+    """
     try:
-        with open(html_file, 'r', encoding='utf-8') as f:
+        with open(html_file, "r", encoding="utf-8") as f:
             html = f.read()
-            
-        html = html.replace(" + 'fps'", " + 'x Speed'")
-        html = html.replace(" + \"fps\"", " + \"x Speed\"")
-        
-        # Updated CSS injected below
+
+        # 1. Change the confusing 'fps' label to 'x Speed' (Added a space before x)
+        html = html.replace(" + 'fps'", " + ' x Speed'")
+        html = html.replace(" + \"fps\"", " + \" x Speed\"")
+
+        # 2. Inject modern responsive CSS override system with upscaled properties
         custom_css = """
         <style>
-            /* Compact the HeatMapWithTime control bar */
-            .leaflet-control.timecontrol {
-                background-color: rgba(255, 255, 255, 0.9) !important;
-                padding: 6px 15px !important; /* Reduced top/bottom padding */
-                border-radius: 8px !important;
-                box-shadow: 0 1px 5px rgba(0,0,0,0.4) !important;
-                max-width: 600px !important; 
-                margin-left: auto !important;
-                margin-right: auto !important;
-                margin-bottom: 20px !important;
-                
-                /* Force precise vertical centering */
-                display: flex !important;
-                align-items: center !important;
-                height: auto !important;
-            }
-            
-            /* Remove innate line-heights and margins pushing text up */
-            .timecontrol-date, .timecontrol-speed, .timecontrol-play {
-                margin: 0 !important;
-                padding: 0 !important;
-                line-height: 1 !important;
-                display: flex !important;
-                align-items: center !important;
+            :root {
+                --base-font-size: 18.5px;    
+                --button-size: 32px;         
+                --container-max-width: 850px;
             }
 
-            /* Adjust the SVG icons to prevent them from expanding container height */
-            .timecontrol svg {
-                max-height: 22px !important; 
-                margin: 0 !important;
-                display: block !important;
+            /* 1. RESPONSIVE CONTAINER */
+            .leaflet-control.timecontrol {
+                background-color: rgba(255, 255, 255, 0.95) !important;
+                padding: 10px 20px !important;
+                border-radius: 8px !important;
+                box-shadow: 0 3px 10px rgba(0,0,0,0.35) !important;
+                
+                display: flex !important;
+                flex-wrap: nowrap !important;        
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 14px !important;                 
+                
+                width: calc(100% - 20px) !important;
+                max-width: var(--container-max-width) !important;
+                height: auto !important;
+                margin: 0 auto 15px auto !important;
+                box-sizing: border-box !important;
             }
             
-            /* Horizontally space the sliders */
+            /* 2. TARGETED TYPOGRAPHY */
+            .timecontrol-date, 
+            .timecontrol-speed {
+                font-size: var(--base-font-size) !important;
+                font-family: Arial, sans-serif !important;
+                font-weight: normal !important;
+                color: #000 !important;
+                line-height: 1.2 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                white-space: nowrap !important;
+            }
+
+            /* 3. FIX OVERLAPPING SPEED LOGO */
+            .timecontrol-speed {
+                padding-left: 28px !important;               
+                background-position: left center !important; 
+                background-size: 20px 20px !important;       
+            }
+            
+            .timecontrol-speed::before {
+                margin-right: 8px !important;
+            }
+            
+            /* 4. ALIGN CONTROL BUTTONS ACCURATELY */
+            .leaflet-bar-timecontrol {
+                display: inline-flex !important;
+                align-items: center !important;
+                margin: 0 !important;
+                border: none !important;
+                height: var(--button-size) !important;
+            }
+            
+            .leaflet-bar-timecontrol a {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: var(--button-size) !important;
+                height: var(--button-size) !important;
+                font-size: calc(var(--base-font-size) - 2px) !important;
+                border: none !important;
+                background: transparent !important;
+                color: #333 !important;
+                text-decoration: none !important;
+            }
+            
+            .leaflet-bar-timecontrol a:hover {
+                background: rgba(0, 0, 0, 0.08) !important;
+                border-radius: 4px !important;
+            }
+
+            /* 5. BALANCED METRIC SLIDER TRACKS */
             .timecontrol input[type="range"] {
-                margin: 0 10px !important;
-                vertical-align: middle !important;
+                display: inline-block !important;
+                height: 6px !important;
+                flex-grow: 1 !important;
+                min-width: 110px !important;
+                max-width: 220px !important;
+                padding: 0 !important;
+                margin: 0 8px !important;
+                background: #ccc !important;
+                border-radius: 3px !important;
+                outline: none !important;
+                -webkit-appearance: none !important;
+            }
+            
+            .timecontrol input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none !important;
+                width: 16px !important;
+                height: 16px !important;
+                border-radius: 50% !important;
+                background: #333 !important;
+                cursor: pointer !important;
+            }
+
+            /* 6. MEDIA QUERIES FOR SMALL TOUCH DEVICE SCREENS */
+            @media (max-width: 860px) {
+                .leaflet-control.timecontrol {
+                    padding: 12px 10px !important;
+                    gap: 8px !important;
+                    flex-wrap: wrap !important;
+                    justify-content: center !important;
+                }
+                /* Force Date to its own row spanning 100% to create a clean stack */
+                .timecontrol-date {
+                    width: 100% !important;
+                    justify-content: center !important;
+                    font-size: 15px !important;
+                    font-weight: bold !important;
+                    margin-bottom: 4px !important;
+                }
+                .timecontrol-speed {
+                    font-size: 14px !important;
+                    padding-left: 22px !important; 
+                    background-size: 16px 16px !important;
+                }
+                .timecontrol input[type="range"] {
+                    min-width: 70px !important;
+                    max-width: 40vw !important; /* Allow the slider to shrink fluidly */
+                }
+                .leaflet-bottom.leaflet-left {
+                    left: 5px !important;
+                    bottom: 5px !important;
+                    width: calc(100% - 10px) !important;
+                }
             }
         </style>
         """
         html = html.replace("</head>", f"{custom_css}\n</head>")
-        
-        with open(html_file, 'w', encoding='utf-8') as f:
+
+        with open(html_file, "w", encoding="utf-8") as f:
             f.write(html)
-            
+
     except Exception as e:
         print(f"Could not apply UI fixes: {e}")
-        
+
 def main():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting collection...")
 
@@ -317,7 +410,7 @@ def main():
     save_history(history)
     
     if generate_heatmap(history, OUTPUT_HTML_FILE):
-        # Apply the UI fixes here!
+        # Apply the layout and UI fixes cleanly
         fix_heatmap_ui(OUTPUT_HTML_FILE)
         send_email_with_link()
 
