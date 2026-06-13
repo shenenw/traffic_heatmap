@@ -2,10 +2,10 @@
 # File: collect-realtime.py
 # Date: 2026-06-13
 # Author: Gemini
-# Description: Collects bus position samples, maintains a cyclic JSON buffer,
-#              generates an HTML heatmap (index.html) with a time slider,
-#              a floating speed color legend, a responsive looping player bar,
-#              and emails the live link. CSS strictly limits max viewport width.
+# Description: Collects real-time bus positions, computes speed-based discrete colors,
+#              maintains a cyclic history, and generates a time-slid marker map (index.html).
+#              Features auto-migration for old 'weight' formats and a highly resilient,
+#              non-wrapping responsive mobile control bar layout.
 
 import os
 import json
@@ -18,7 +18,7 @@ from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from collections import OrderedDict
 import folium
-from folium.plugins import HeatMapWithTime
+from folium.plugins import TimestampedGeoJson
 
 # ---------- CONFIGURATION ----------
 DATA_LOG_FILE = "bus_realtime_history.json"
@@ -92,19 +92,24 @@ def parse_and_filter_snapshot(entities, previous_speeds):
             if speed_kmh > 70.0 or speed_kmh < 7.0:
                 continue
 
-        # Delta-T Check
+        # Delta-T Acceleration Check
         if previous_speeds and vehicle_id in previous_speeds:
             prev_speed_ms = previous_speeds[vehicle_id]
             if (abs(speed_ms - prev_speed_ms) / SUB_SAMPLE_INTERVAL) > MAX_ACCELERATION:
                 continue
 
-        # Low Processing Processing: Convert raw speed directly into categorical weights
-        intensity = 1.0 if speed_kmh < 20 else (0.6 if speed_kmh < 40 else 0.2)
+        # Map speed thresholds explicitly to hex colors
+        if speed_kmh < 20.0:
+            color_hex = "#FF0000"  # Red
+        elif speed_kmh < 40.0:
+            color_hex = "#00FF00"  # Lime
+        else:
+            color_hex = "#0000FF"  # Blue
         
         valid_points.append({
             "lat": lat, 
             "lon": lon, 
-            "weight": intensity
+            "color": color_hex
         })
         
     return valid_points
@@ -115,7 +120,24 @@ def load_existing_history():
     try:
         with open(DATA_LOG_FILE, "r") as f:
             data = json.load(f)
-        return OrderedDict(sorted(data.items()))
+        
+        sorted_data = OrderedDict(sorted(data.items()))
+        
+        # On-the-fly migration for old history entries containing 'weight' logs
+        for timestamp, points in sorted_data.items():
+            migrated_points = []
+            for p in points:
+                if "color" not in p and "weight" in p:
+                    if p["weight"] == 1.0:
+                        p["color"] = "#FF0000"
+                    elif p["weight"] == 0.6:
+                        p["color"] = "#00FF00"
+                    else:
+                        p["color"] = "#0000FF"
+                migrated_points.append(p)
+            sorted_data[timestamp] = migrated_points
+            
+        return sorted_data
     except (json.JSONDecodeError, IOError):
         print(f"Warning: Could not read {DATA_LOG_FILE}, starting fresh.")
         return OrderedDict()
@@ -126,53 +148,89 @@ def save_history(history):
 
 def generate_heatmap(history, output_file):
     if not history:
-        print("No data to generate heatmap.")
+        print("No historical coordinates available to plot.")
         return False
 
     center_lat, center_lon = 53.5461, -113.4938
     m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
 
-    time_data = []
-    time_index = []
+    features = []
     for timestamp, points in history.items():
-        if points:
-            heat_points = [[p["lat"], p["lon"], p["weight"]] for p in points]
-            time_data.append(heat_points)
-            time_index.append(timestamp)
-        else:
-            time_data.append([])
-            time_index.append(timestamp)
+        formatted_time = timestamp.replace(" ", "T")
+        for p in points:
+            features.append({
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [p['lon'], p['lat']]
+                },
+                'properties': {
+                    'time': formatted_time,
+                    'style': {
+                        'color': p['color'],
+                        'fillColor': p['color'],
+                        'fillOpacity': 0.85,
+                        'radius': 5,
+                        'weight': 1,
+                        'clickable': True
+                    },
+                    'icon': 'circle'
+                }
+            })
 
-    if time_data:
-        speed_range_gradient = {0.2: 'blue', 0.6: 'lime', 1.0: 'red'}
-        HeatMapWithTime(
-            time_data, 
-            index=time_index, 
-            auto_play=False, 
-            radius=12,
-            gradient=speed_range_gradient,
-            min_opacity=0.4,
-            max_opacity=0.85
-        ).add_to(m)
+    feature_collection = {
+        'type': 'FeatureCollection',
+        'features': features
+    }
 
+    # Use TimestampedGeoJson with default 1fps (1000ms transition) and auto-play
+    TimestampedGeoJson(
+        feature_collection,
+        period='PT1H',
+        duration='PT1H',
+        add_last_point=True,
+        auto_play=True,
+        loop=True,
+        max_speed=5,
+        loop_button=True,
+        date_options='YYYY-MM-DD HH:mm:ss',
+        time_slider_drag_update=True,
+        transition_time=1000 # 1000ms = 1 frame per second
+    ).add_to(m)
+
+    # Flexbox-aligned Speed range Legend Box layout
     legend_html = '''
-    <div class="custom-speed-legend" style="position: fixed; bottom: 140px; left: 10px; width: 140px; height: 100px; background-color: rgba(255, 255, 255, 0.95); border: 2px solid #999; z-index: 9999; font-size: 13px; font-family: Arial, sans-serif; padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
-        <b style="display: block; margin-bottom: 5px;">Speed Indicator</b>
-        <div style="margin-bottom: 3px;"><span style="background: red; width: 16px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &lt; 20 km/h</div>
-        <div style="margin-bottom: 3px;"><span style="background: lime; width: 16px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> 20 - 40 km/h</div>
-        <div><span style="background: blue; width: 16px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &gt; 40 km/h</div>
+    <div class="custom-speed-legend" style="position: fixed; bottom: 155px; left: 12px; width: 140px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #bbb; z-index: 9999; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; padding: 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); pointer-events: none; box-sizing: border-box;">
+        <b style="display: block; margin-bottom: 6px; font-size: 13px; color: #222;">Bus Speed</b>
+        <div style="display: flex; align-items: center; margin-bottom: 5px; line-height: 1;">
+            <span style="background: #FF0000; width: 16px; height: 10px; display: block; border-radius: 2px; margin-right: 6px; flex-shrink: 0;"></span>
+            <span style="display: inline-block; line-height: 1;">&lt; 20 km/h</span>
+        </div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px; line-height: 1;">
+            <span style="background: #00FF00; width: 16px; height: 10px; display: block; border-radius: 2px; margin-right: 6px; flex-shrink: 0;"></span>
+            <span style="display: inline-block; line-height: 1;">20 - 40 km/h</span>
+        </div>
+        <div style="display: flex; align-items: center; line-height: 1;">
+            <span style="background: #0000FF; width: 16px; height: 10px; display: block; border-radius: 2px; margin-right: 6px; flex-shrink: 0;"></span>
+            <span style="display: inline-block; line-height: 1;">&gt; 40 km/h</span>
+        </div>
     </div>
     '''
     
+    # Execution safety fallback script to assert play state and loop state
     custom_ui_html = '''
     <script>
         window.addEventListener('load', function() {
             setTimeout(function() {
-                var players = document.querySelectorAll('.timecontrol-loop');
-                if (players.length > 0) {
-                    players.forEach(function(p) { p.click(); });
+                var loopBtn = document.querySelector('.timecontrol-loop');
+                if (loopBtn && !loopBtn.classList.contains('active')) {
+                    loopBtn.click();
                 }
-            }, 1000);
+                var playBtn = document.querySelector('.timecontrol-play');
+                if (playBtn && !playBtn.classList.contains('pause')) {
+                    playBtn.click();
+                }
+            }, 1200);
         });
     </script>
     '''
@@ -185,20 +243,20 @@ def generate_heatmap(history, output_file):
 
 def send_email_with_link():
     if not all([EMAIL_FROM, EMAIL_TO, EMAIL_PASSWORD, SMTP_SERVER]):
-        print("Email credentials not set. Skipping email.")
+        print("Email configurations omitted. Skipping transfer.")
         return False
 
     cloudflare_url = "https://traffic-heatmap.shenenwang.workers.dev/"
-    subject = f"Bus Traffic Heatmap Updated - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    subject = f"Bus Traffic Dashboard Updated - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
     body = f"""Hello,
 
-The latest bus traffic data snapshot has been successfully collected and compiled.
+The latest real-time discrete bus fleet markers have been processed.
 
-You can view the real-time interactive heatmap on your Cloudflare dashboard here:
+You can view the interactive map showing exact vehicle locations and speed coloring here:
 {cloudflare_url}
 
-The rolling tracking buffer currently retains history for up to the last {TOTAL_SAMPLES} hours."""
+Rolling telemetry tracks the last {TOTAL_SAMPLES} active sampling frames."""
 
     msg = MIMEMultipart()
     msg['From'] = EMAIL_FROM
@@ -211,10 +269,10 @@ The rolling tracking buffer currently retains history for up to the last {TOTAL_
             server.starttls()
             server.login(EMAIL_FROM, EMAIL_PASSWORD)
             server.send_message(msg)
-        print(f"Notification email sent to {EMAIL_TO}")
+        print(f"Notification updates dispatched to {EMAIL_TO}")
         return True
     except Exception as e:
-        print(f"Email sending failed: {e}")
+        print(f"SMTP Notification failure: {e}")
         return False
 
 def collect_one_sample():
@@ -241,108 +299,140 @@ def fix_heatmap_ui(html_file):
         html = html.replace(" + 'fps'", " + ' x Speed'")
         html = html.replace(" + \"fps\"", " + \" x Speed\"")
 
+        # Refactored CSS specifically optimized for 15% larger desktop elements & responsive mobile layout
         custom_css = """
         <style>
             :root {
-                --base-font-size: 16px;    
-                --button-size: 30px;         
+                --ui-font-size: 16px;       /* 15% larger than 14px */
+                --ctrl-height: 46px;        /* 15% larger than 40px */
             }
 
-            /* Main Responsive Container */
+            /* Main Layout Structure (Scaled up on Desktop) */
             .leaflet-control.timecontrol {
-                background-color: rgba(255, 255, 255, 0.95) !important;
-                padding: 10px !important;
-                border-radius: 8px !important;
-                box-shadow: 0 3px 10px rgba(0,0,0,0.35) !important;
+                background-color: rgba(255, 255, 255, 0.98) !important;
+                padding: 8px 12px !important;
+                border-radius: 9px !important;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important;
+                border: 1px solid #ccc !important;
+                
                 display: flex !important;
-                flex-wrap: wrap !important;        
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;        
                 align-items: center !important;
-                justify-content: center !important;
-                gap: 10px !important;                 
+                justify-content: flex-start !important;
+                gap: 10px !important;
                 box-sizing: border-box !important;
+                height: var(--ctrl-height) !important;
             }
             
             .timecontrol-date, 
             .timecontrol-speed {
-                font-size: var(--base-font-size) !important;
-                font-family: Arial, sans-serif !important;
-                color: #000 !important;
+                font-size: var(--ui-font-size) !important;
+                font-family: -apple-system, Arial, sans-serif !important;
+                color: #222 !important;
                 white-space: nowrap !important;
+                display: inline-flex !important;
+                align-items: center !important;
             }
 
             .timecontrol-speed {
-                padding-left: 24px !important;               
-                background-position: left center !important; 
-                background-size: 18px 18px !important;       
+                padding-left: 28px !important;
+                background-position: left center !important;
+                background-size: 18px 18px !important;
             }
             
             .leaflet-bar-timecontrol {
                 display: inline-flex !important;
                 align-items: center !important;
                 border: none !important;
+                margin: 0 !important;
+                background: transparent !important;
             }
             
             .leaflet-bar-timecontrol a {
-                width: var(--button-size) !important;
-                height: var(--button-size) !important;
-                font-size: 14px !important;
+                width: 35px !important;     /* Scaled up from 30px */
+                height: 35px !important;    /* Scaled up from 30px */
+                font-size: 14px !important;  /* Scaled up from 12px */
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 color: #333 !important;
-                text-decoration: none !important;
+                border: none !important;
+                background: transparent !important;
             }
 
-            /* Sliders */
             .timecontrol input[type="range"] {
-                height: 6px !important;
+                height: 5px !important;
                 background: #ccc !important;
-                border-radius: 3px !important;
+                border-radius: 2px !important;
                 outline: none !important;
                 -webkit-appearance: none !important;
+                flex-grow: 1 !important;
+                min-width: 80px !important;
             }
             
             .timecontrol input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none !important;
-                width: 16px !important;
-                height: 16px !important;
+                width: 16px !important;     /* Scaled up from 14px */
+                height: 16px !important;    /* Scaled up from 14px */
                 border-radius: 50% !important;
-                background: #333 !important;
+                background: #444 !important;
             }
 
-            /* STRICT MOBILE OVERRIDES TO PREVENT RIGHT-EDGE CUTOFF */
+            /* LIQUID GRID RECONSTRUCTION SHIFTS CONTROLS BELOW FLOATING LEGEND ON MOBILE */
             @media (max-width: 860px) {
+                :root {
+                    --ui-font-size: 12px !important;
+                }
                 .leaflet-bottom.leaflet-left {
-                    /* Detach from Folium's standard grid to prevent parent container overflow */
                     position: fixed !important;
-                    bottom: 10px !important;
-                    left: 2.5vw !important; /* 2.5vw margin on left + right = 5vw */
-                    width: 95vw !important; /* Strictly lock to 95% screen width */
+                    bottom: 8px !important;
+                    left: 3vw !important;
+                    width: 94vw !important;
                     margin: 0 !important;
                     padding: 0 !important;
-                    display: flex !important;
-                    justify-content: center !important;
+                    z-index: 10000 !important;
                 }
                 
                 .leaflet-control.timecontrol {
                     width: 100% !important;
                     max-width: 100% !important;
-                    padding: 8px !important;
-                    gap: 5px !important;
+                    height: 38px !important;
+                    padding: 6px !important;
+                    gap: 4px !important;
                 }
 
-                /* Shrink inner components relative to screen size */
+                .leaflet-bar-timecontrol a {
+                    width: 26px !important;
+                    height: 26px !important;
+                    font-size: 11px !important;
+                }
+
                 .timecontrol input[type="range"] {
-                    width: 25vw !important; /* Base size on screen width, not pixels */
-                    min-width: 60px !important;
-                    max-width: 120px !important;
+                    width: 20vw !important;
+                    height: 4px !important;
+                }
+
+                .timecontrol input[type="range"]::-webkit-slider-thumb {
+                    width: 12px !important;
+                    height: 12px !important;
                 }
                 
-                .timecontrol-date { font-size: 14px !important; font-weight: bold !important; width: 100%; text-align: center; }
-                .timecontrol-speed { font-size: 13px !important; }
+                .timecontrol-date { 
+                    font-size: 12px !important; 
+                    font-weight: bold !important; 
+                }
+                .timecontrol-speed { 
+                    font-size: 11px !important;
+                    padding-left: 18px !important;
+                    background-size: 14px 14px !important;
+                }
                 
                 .custom-speed-legend {
-                    bottom: 120px !important;
+                    bottom: 110px !important;
+                    left: 12px !important;
+                    transform: scale(0.9);
+                    transform-origin: bottom left;
                 }
             }
         </style>
