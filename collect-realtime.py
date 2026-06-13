@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # File: collect-realtime.py
 # Date: 2026-06-12
-# Description: Collects one bus position sample, maintains a cyclic JSON buffer,
-#              generates an HTML heatmap (index.html), and emails a live link 
-#              to the Cloudflare deployment instead of an attachment.
-#              Designed to be run hourly from cron / GitHub Actions.
+# Description: Collects bus position samples, maintains a cyclic JSON buffer,
+#              generates an HTML heatmap (index.html) with a time slider and
+#              static speed color bands, and emails the live link.
+#              Optimized for low browser processing.
 
 import os
 import json
@@ -18,6 +18,8 @@ from google.transit import gtfs_realtime_pb2
 from collections import OrderedDict
 import folium
 from folium.plugins import HeatMapWithTime
+from branca.element import MacroElement
+from jinja2 import Template
 
 # ---------- CONFIGURATION ----------
 DATA_LOG_FILE = "bus_realtime_history.json"
@@ -35,6 +37,44 @@ SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 
 # -----------------------------------
+
+class SpeedLegend(MacroElement):
+    """A highly lightweight HTML/CSS macro to overlay a static legend onto a Folium map."""
+    def __init__(self):
+        super(SpeedLegend, self).__init__()
+        self._template = Template("""
+        {% macro html(this, kwargs) %}
+        <div style="
+            position: fixed; 
+            bottom: 80px; 
+            left: 20px; 
+            width: 150px; 
+            height: 110px; 
+            background-color: rgba(255, 255, 255, 0.9); 
+            border: 2px solid #999; 
+            z-index: 9999; 
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+            ">
+            <b style="display: block; margin-bottom: 5px;">Bus Speed Range</b>
+            <div style="margin-bottom: 3px;">
+                <span style="background: red; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
+                &lt; 20 km/h (Slow)
+            </div>
+            <div style="margin-bottom: 3px;">
+                <span style="background: lime; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
+                20 - 40 km/h
+            </div>
+            <div>
+                <span style="background: blue; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
+                &gt; 40 km/h (Fast)
+            </div>
+        </div>
+        {% endmacro %}
+        """)
 
 def fetch_live_bus_positions():
     url = "http://gtfs.edmonton.ca/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
@@ -97,13 +137,14 @@ def parse_and_filter_snapshot(entities, previous_speeds):
             if (abs(speed_ms - prev_speed_ms) / SUB_SAMPLE_INTERVAL) > MAX_ACCELERATION:
                 continue
 
+        # Low Processing Processing: Convert raw speed directly into categorical weights
+        # Slow is highest weight (1.0) for red visibility, Fast is lowest weight (0.2) for blue
         intensity = 1.0 if speed_kmh < 20 else (0.6 if speed_kmh < 40 else 0.2)
         
         valid_points.append({
             "lat": lat, 
             "lon": lon, 
-            "weight": intensity, 
-            "speed_kmh": round(speed_kmh, 1)
+            "weight": intensity
         })
         
     return valid_points
@@ -124,7 +165,7 @@ def save_history(history):
         json.dump(dict(history), f, indent=2)
 
 def generate_heatmap(history, output_file):
-    """Creates an interactive map with a time slider using the collected snapshots."""
+    """Generates an optimized time-sliding heatmap relying strictly on gradient color mapping."""
     if not history:
         print("No data to generate heatmap.")
         return False
@@ -133,10 +174,12 @@ def generate_heatmap(history, output_file):
     center_lat, center_lon = 53.5461, -113.4938
     m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
 
+    # Format historical frames for HeatMapWithTime
     time_data = []
     time_index = []
     for timestamp, points in history.items():
         if points:
+            # Drop speed values entirely to minimize output HTML weight
             heat_points = [[p["lat"], p["lon"], p["weight"]] for p in points]
             time_data.append(heat_points)
             time_index.append(timestamp)
@@ -145,10 +188,24 @@ def generate_heatmap(history, output_file):
             time_index.append(timestamp)
 
     if time_data:
-        HeatMapWithTime(time_data, index=time_index, auto_play=False, radius=10).add_to(m)
+        # Maps weights exactly to colors: 0.2->Blue (>40km/h), 0.6->Lime (20-40km/h), 1.0->Red (<20km/h)
+        speed_range_gradient = {0.2: 'blue', 0.6: 'lime', 1.0: 'red'}
+        
+        HeatMapWithTime(
+            time_data, 
+            index=time_index, 
+            auto_play=False, 
+            radius=12,
+            gradient=speed_range_gradient,
+            min_opacity=0.4,
+            max_opacity=0.85
+        ).add_to(m)
+
+    # Add the CSS overlay legend box
+    m.add_child(SpeedLegend())
 
     m.save(output_file)
-    print(f"Heatmap saved to {output_file}")
+    print(f"Low-overhead heatmap saved to {output_file}")
     return True
 
 def send_email_with_link():
