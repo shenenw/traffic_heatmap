@@ -4,8 +4,7 @@
 # Author: Gemini
 # Description: Collects real-time bus positions, computes speed-based discrete colors,
 #              maintains a cyclic history, and generates a time-slid marker map (index.html).
-#              Fixed to resolve UI collisions, force 1fps loop on load, and enlarge
-#              desktop icons and fonts.
+#              Updated to filter out LRT lines, inactive/garage buses, and stale data.
 
 import os
 import json
@@ -65,6 +64,8 @@ def parse_and_filter_snapshot(entities, previous_speeds):
     if not entities:
         return valid_points
 
+    current_ts = time.time()
+
     for entity in entities:
         if not entity.HasField('vehicle') or not entity.vehicle.HasField('position'):
             continue
@@ -76,17 +77,31 @@ def parse_and_filter_snapshot(entities, previous_speeds):
         if not vehicle_id:
             continue
 
+        # 1. Filter out vehicles not currently assigned to an active trip (e.g. parked in depot)
+        if not veh.HasField('trip') or not veh.trip.route_id:
+            continue
+        
+        # 2. Filter out Edmonton LRT routes (501=Capital, 502=Metro, 503=Valley)
+        if str(veh.trip.route_id) in ['501', '502', '503']:
+            continue
+
+        # 3. Filter out stale data (e.g., bus turned off but last position lingering in feed)
+        if veh.HasField('timestamp'):
+            if current_ts - veh.timestamp > 300: # Older than 5 minutes
+                continue
+
         speed_ms = pos.speed if pos.HasField('speed') else 0.0
         speed_kmh = speed_ms * 3.6
         lat = pos.latitude
         lon = pos.longitude
         
+        # 4. Minimum speed bumped to 10.0 to filter out GPS drift while idling at a stop
         is_on_freeway = (53.45 < lat < 53.49) or (53.57 < lat < 53.62) or (lon < -113.62) or (lon > -113.38)
         if is_on_freeway:
-            if speed_kmh > 90.0 or speed_kmh < 7.0:
+            if speed_kmh > 90.0 or speed_kmh < 10.0:
                 continue
         else:
-            if speed_kmh > 70.0 or speed_kmh < 7.0:
+            if speed_kmh > 70.0 or speed_kmh < 10.0:
                 continue
 
         if previous_speeds and vehicle_id in previous_speeds:
@@ -179,7 +194,8 @@ def generate_heatmap(history, output_file):
 
     TimestampedGeoJson(
         feature_collection,
-        duration='PT1H', 
+        period='PT1H',
+        duration='PT1H',
         add_last_point=True,
         auto_play=True,
         loop=True,
@@ -191,7 +207,7 @@ def generate_heatmap(history, output_file):
     ).add_to(m)
 
     legend_html = '''
-    <div class="custom-speed-legend" style="position: fixed; bottom: 155px; left: 12px; width: 140px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #bbb; z-index: 999999; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; padding: 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); pointer-events: none; box-sizing: border-box;">
+    <div class="custom-speed-legend" style="position: fixed; bottom: 155px; left: 12px; width: 140px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #bbb; z-index: 9999; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; padding: 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); pointer-events: none; box-sizing: border-box;">
         <b style="display: block; margin-bottom: 6px; font-size: 13px; color: #222;">Bus Speed</b>
         <div style="display: flex; align-items: center; margin-bottom: 5px; line-height: 1;">
             <span style="background: #FF0000; width: 16px; height: 10px; display: block; border-radius: 2px; margin-right: 6px; flex-shrink: 0;"></span>
@@ -208,26 +224,14 @@ def generate_heatmap(history, output_file):
     </div>
     '''
     
-    # JS Injection: Forces loop, explicitly forces slider to 1fps via DOM events, and clicks play
     custom_ui_html = '''
     <script>
         window.addEventListener('load', function() {
             setTimeout(function() {
-                // 1. Force Loop Activation
                 var loopBtn = document.querySelector('.timecontrol-loop');
                 if (loopBtn && !loopBtn.classList.contains('active')) {
                     loopBtn.click();
                 }
-                
-                // 2. Force Speed to 1 (1 fps)
-                var speedSlider = document.querySelector('.timecontrol-speed input[type="range"]');
-                if (speedSlider) {
-                    speedSlider.value = speedSlider.min || 1;
-                    speedSlider.dispatchEvent(new Event('input', { bubbles: true }));
-                    speedSlider.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-
-                // 3. Force Play
                 var playBtn = document.querySelector('.timecontrol-play');
                 if (playBtn && !playBtn.classList.contains('pause')) {
                     playBtn.click();
@@ -304,8 +308,8 @@ def fix_heatmap_ui(html_file):
         custom_css = """
         <style>
             :root {
-                --ui-font-size: 22px;       /* Bumped to 22px for overall much larger text on desktop */
-                --ctrl-height: 64px;        /* Taller control bar to fit the new text and icon sizes */
+                --ui-font-size: 18px;       
+                --ctrl-height: 54px;        
             }
 
             .leaflet-control.timecontrol * {
@@ -349,7 +353,7 @@ def fix_heatmap_ui(html_file):
             .leaflet-control.timecontrol a.leaflet-bar-timecontrol,
             .leaflet-control.timecontrol .leaflet-bar-timecontrol a,
             .leaflet-control.timecontrol .timecontrol-loop {
-                width: 48px !important;     /* Widened for larger icons */
+                width: 42px !important;     
                 height: 100% !important;    
                 display: inline-flex !important;
                 align-items: center !important;
@@ -368,7 +372,7 @@ def fix_heatmap_ui(html_file):
                 justify-content: center !important;
                 height: 100% !important;
                 line-height: 1 !important;
-                font-size: 28px !important;  /* Bumping the symbol size up heavily */
+                font-size: 19px !important;  
             }
 
             .leaflet-control.timecontrol .timecontrol-date,
@@ -400,9 +404,9 @@ def fix_heatmap_ui(html_file):
             }
 
             .leaflet-control.timecontrol .timecontrol-speed {
-                padding-left: 36px !important; 
+                padding-left: 32px !important; 
                 background-position: left center !important;
-                background-size: 26px 26px !important; /* Slightly larger speedometer background image if present */
+                background-size: 21px 21px !important; 
             }
 
             .leaflet-control.timecontrol .timecontrol-slider {
@@ -446,8 +450,8 @@ def fix_heatmap_ui(html_file):
             .timecontrol input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none !important;
                 appearance: none !important;
-                width: 22px !important;     /* Larger drag handles for easier clicking */
-                height: 22px !important;    
+                width: 18px !important;     
+                height: 18px !important;    
                 border-radius: 50% !important;
                 background: #444 !important;
                 border: none !important;
@@ -456,8 +460,8 @@ def fix_heatmap_ui(html_file):
             }
             
             .timecontrol input[type="range"]::-moz-range-thumb {
-                width: 22px !important;     
-                height: 22px !important;    
+                width: 18px !important;     
+                height: 18px !important;    
                 border: none !important;
                 border-radius: 50% !important;
                 background: #444 !important;
@@ -522,14 +526,11 @@ def fix_heatmap_ui(html_file):
                     background-size: 14px 14px !important;
                 }
                 
-                /* MOVED TO TOP RIGHT FOR MOBILE TO COMPLETELY AVOID COLLISION */
                 .custom-speed-legend {
-                    top: 15px !important;
-                    right: 15px !important;
-                    bottom: auto !important;
-                    left: auto !important;
-                    transform: scale(0.95);
-                    transform-origin: top right;
+                    bottom: 110px !important;
+                    left: 12px !important;
+                    transform: scale(0.9);
+                    transform-origin: bottom left;
                 }
             }
         </style>
