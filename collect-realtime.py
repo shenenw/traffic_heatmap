@@ -3,7 +3,7 @@
 # Date: 2026-06-12
 # Description: Collects bus position samples, maintains a cyclic JSON buffer,
 #              generates an HTML heatmap (index.html) with a time slider and
-#              static speed color bands, and emails the live link.
+#              a bulletproof floating speed color legend, and emails the live link.
 #              Optimized for low browser processing.
 
 import os
@@ -18,8 +18,6 @@ from google.transit import gtfs_realtime_pb2
 from collections import OrderedDict
 import folium
 from folium.plugins import HeatMapWithTime
-from branca.element import MacroElement
-from jinja2 import Template
 
 # ---------- CONFIGURATION ----------
 DATA_LOG_FILE = "bus_realtime_history.json"
@@ -37,44 +35,6 @@ SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 
 # -----------------------------------
-
-class SpeedLegend(MacroElement):
-    """A highly lightweight HTML/CSS macro to overlay a static legend onto a Folium map."""
-    def __init__(self):
-        super(SpeedLegend, self).__init__()
-        self._template = Template("""
-        {% macro html(this, kwargs) %}
-        <div style="
-            position: fixed; 
-            bottom: 80px; 
-            left: 20px; 
-            width: 150px; 
-            height: 110px; 
-            background-color: rgba(255, 255, 255, 0.9); 
-            border: 2px solid #999; 
-            z-index: 9999; 
-            font-size: 12px;
-            font-family: Arial, sans-serif;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-            ">
-            <b style="display: block; margin-bottom: 5px;">Bus Speed Range</b>
-            <div style="margin-bottom: 3px;">
-                <span style="background: red; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
-                &lt; 20 km/h (Slow)
-            </div>
-            <div style="margin-bottom: 3px;">
-                <span style="background: lime; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
-                20 - 40 km/h
-            </div>
-            <div>
-                <span style="background: blue; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
-                &gt; 40 km/h (Fast)
-            </div>
-        </div>
-        {% endmacro %}
-        """)
 
 def fetch_live_bus_positions():
     url = "http://gtfs.edmonton.ca/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
@@ -201,8 +161,40 @@ def generate_heatmap(history, output_file):
             max_opacity=0.85
         ).add_to(m)
 
-    # Add the CSS overlay legend box
-    m.add_child(SpeedLegend())
+    # Inject the floating legend directly into the HTML root body
+    legend_html = '''
+    <div style="
+        position: fixed; 
+        bottom: 50px; 
+        left: 50px; 
+        width: 150px; 
+        height: 110px; 
+        background-color: rgba(255, 255, 255, 0.9); 
+        border: 2px solid #999; 
+        z-index: 9999; 
+        font-size: 12px;
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        pointer-events: none;
+        ">
+        <b style="display: block; margin-bottom: 5px;">Bus Speed Range</b>
+        <div style="margin-bottom: 3px;">
+            <span style="background: red; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
+            &lt; 20 km/h (Slow)
+        </div>
+        <div style="margin-bottom: 3px;">
+            <span style="background: lime; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
+            20 - 40 km/h
+        </div>
+        <div>
+            <span style="background: blue; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
+            &gt; 40 km/h (Fast)
+        </div>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(legend_html))
 
     m.save(output_file)
     print(f"Low-overhead heatmap saved to {output_file}")
