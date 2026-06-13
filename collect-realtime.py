@@ -4,8 +4,8 @@
 # Author: Gemini
 # Description: Collects real-time bus positions, computes speed-based discrete colors,
 #              maintains a cyclic history, and generates a time-slid marker map (index.html).
-#              Fixed to resolve disappearing legends, TimeDimension slider crashes,
-#              and flexible cron intervals.
+#              Fixed to resolve UI collisions, force 1fps loop on load, and enlarge
+#              desktop icons and fonts.
 
 import os
 import json
@@ -177,7 +177,6 @@ def generate_heatmap(history, output_file):
         'features': features
     }
 
-    # Removed period='PT1H' to prevent JS parsing crashes when cron drops or delays
     TimestampedGeoJson(
         feature_collection,
         duration='PT1H', 
@@ -191,7 +190,6 @@ def generate_heatmap(history, output_file):
         transition_time=1000 
     ).add_to(m)
 
-    # Increased z-index significantly to ensure visibility over Leaflet map panes
     legend_html = '''
     <div class="custom-speed-legend" style="position: fixed; bottom: 155px; left: 12px; width: 140px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #bbb; z-index: 999999; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; padding: 10px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); pointer-events: none; box-sizing: border-box;">
         <b style="display: block; margin-bottom: 6px; font-size: 13px; color: #222;">Bus Speed</b>
@@ -210,14 +208,26 @@ def generate_heatmap(history, output_file):
     </div>
     '''
     
+    # JS Injection: Forces loop, explicitly forces slider to 1fps via DOM events, and clicks play
     custom_ui_html = '''
     <script>
         window.addEventListener('load', function() {
             setTimeout(function() {
+                // 1. Force Loop Activation
                 var loopBtn = document.querySelector('.timecontrol-loop');
                 if (loopBtn && !loopBtn.classList.contains('active')) {
                     loopBtn.click();
                 }
+                
+                // 2. Force Speed to 1 (1 fps)
+                var speedSlider = document.querySelector('.timecontrol-speed input[type="range"]');
+                if (speedSlider) {
+                    speedSlider.value = speedSlider.min || 1;
+                    speedSlider.dispatchEvent(new Event('input', { bubbles: true }));
+                    speedSlider.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                // 3. Force Play
                 var playBtn = document.querySelector('.timecontrol-play');
                 if (playBtn && !playBtn.classList.contains('pause')) {
                     playBtn.click();
@@ -294,8 +304,8 @@ def fix_heatmap_ui(html_file):
         custom_css = """
         <style>
             :root {
-                --ui-font-size: 18px;       
-                --ctrl-height: 54px;        
+                --ui-font-size: 22px;       /* Bumped to 22px for overall much larger text on desktop */
+                --ctrl-height: 64px;        /* Taller control bar to fit the new text and icon sizes */
             }
 
             .leaflet-control.timecontrol * {
@@ -339,7 +349,7 @@ def fix_heatmap_ui(html_file):
             .leaflet-control.timecontrol a.leaflet-bar-timecontrol,
             .leaflet-control.timecontrol .leaflet-bar-timecontrol a,
             .leaflet-control.timecontrol .timecontrol-loop {
-                width: 42px !important;     
+                width: 48px !important;     /* Widened for larger icons */
                 height: 100% !important;    
                 display: inline-flex !important;
                 align-items: center !important;
@@ -358,7 +368,7 @@ def fix_heatmap_ui(html_file):
                 justify-content: center !important;
                 height: 100% !important;
                 line-height: 1 !important;
-                font-size: 19px !important;  
+                font-size: 28px !important;  /* Bumping the symbol size up heavily */
             }
 
             .leaflet-control.timecontrol .timecontrol-date,
@@ -390,9 +400,9 @@ def fix_heatmap_ui(html_file):
             }
 
             .leaflet-control.timecontrol .timecontrol-speed {
-                padding-left: 32px !important; 
+                padding-left: 36px !important; 
                 background-position: left center !important;
-                background-size: 21px 21px !important; 
+                background-size: 26px 26px !important; /* Slightly larger speedometer background image if present */
             }
 
             .leaflet-control.timecontrol .timecontrol-slider {
@@ -436,8 +446,8 @@ def fix_heatmap_ui(html_file):
             .timecontrol input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none !important;
                 appearance: none !important;
-                width: 18px !important;     
-                height: 18px !important;    
+                width: 22px !important;     /* Larger drag handles for easier clicking */
+                height: 22px !important;    
                 border-radius: 50% !important;
                 background: #444 !important;
                 border: none !important;
@@ -446,8 +456,8 @@ def fix_heatmap_ui(html_file):
             }
             
             .timecontrol input[type="range"]::-moz-range-thumb {
-                width: 18px !important;     
-                height: 18px !important;    
+                width: 22px !important;     
+                height: 22px !important;    
                 border: none !important;
                 border-radius: 50% !important;
                 background: #444 !important;
@@ -512,11 +522,14 @@ def fix_heatmap_ui(html_file):
                     background-size: 14px 14px !important;
                 }
                 
+                /* MOVED TO TOP RIGHT FOR MOBILE TO COMPLETELY AVOID COLLISION */
                 .custom-speed-legend {
-                    bottom: 110px !important;
-                    left: 12px !important;
-                    transform: scale(0.9);
-                    transform-origin: bottom left;
+                    top: 15px !important;
+                    right: 15px !important;
+                    bottom: auto !important;
+                    left: auto !important;
+                    transform: scale(0.95);
+                    transform-origin: top right;
                 }
             }
         </style>
