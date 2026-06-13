@@ -145,9 +145,7 @@ def generate_heatmap(history, output_file):
             time_index.append(timestamp)
 
     if time_data:
-        # Gradient handles all the coloring: 0.2->Blue, 0.6->Lime, 1.0->Red
         speed_range_gradient = {0.2: 'blue', 0.6: 'lime', 1.0: 'red'}
-        
         HeatMapWithTime(
             time_data, 
             index=time_index, 
@@ -158,79 +156,40 @@ def generate_heatmap(history, output_file):
             max_opacity=0.85
         ).add_to(m)
 
-    # 1. Legend Box
+    # 1. Legend Box (remains the same)
     legend_html = '''
-    <div style="
-        position: fixed; 
-        bottom: 120px; /* Shifted up slightly to avoid overlapping the larger control bar */
-        left: 30px; 
-        width: 150px; 
-        height: 110px; 
-        background-color: rgba(255, 255, 255, 0.9); 
-        border: 2px solid #999; 
-        z-index: 9999; 
-        font-size: 12px;
-        font-family: Arial, sans-serif;
-        padding: 10px;
-        border-radius: 5px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        pointer-events: none;
-        ">
+    <div style="position: fixed; bottom: 120px; left: 30px; width: 150px; height: 110px; background-color: rgba(255, 255, 255, 0.9); border: 2px solid #999; z-index: 9999; font-size: 14px; font-family: Arial, sans-serif; padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); pointer-events: none;">
         <b style="display: block; margin-bottom: 5px;">Bus Speed Range</b>
-        <div style="margin-bottom: 3px;">
-            <span style="background: red; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
-            &lt; 20 km/h (Slow)
-        </div>
-        <div style="margin-bottom: 3px;">
-            <span style="background: lime; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
-            20 - 40 km/h
-        </div>
-        <div>
-            <span style="background: blue; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span>
-            &gt; 40 km/h (Fast)
-        </div>
+        <div style="margin-bottom: 3px;"><span style="background: red; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &lt; 20 km/h</div>
+        <div style="margin-bottom: 3px;"><span style="background: lime; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> 20 - 40 km/h</div>
+        <div><span style="background: blue; width: 20px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px;"></span> &gt; 40 km/h</div>
     </div>
     '''
     
-    # 2. UI Scaler and Looping Script Injection
+    # 2. UI Scaler and Force-Loop Script
+    # Increased font sizes and force-set looping on load
     custom_ui_html = '''
     <style>
-        /* Scale up the entire bottom control bar */
-        .leaflet-control-timecontrol {
-            transform: scale(1.35); /* Makes the whole bar 35% larger natively */
-            transform-origin: bottom left;
-            margin-bottom: 30px !important;
-            margin-left: 20px !important;
-        }
-        /* Target the specific labels to make them darker and bolder */
-        .leaflet-bar-timecontrol .timecontrol-date,
-        .leaflet-bar-timecontrol .timecontrol-speed {
-            font-size: 13px !important;
-            font-weight: 900 !important;
-            color: #000 !important;
-        }
+        .leaflet-control-timecontrol { transform: scale(1.4); transform-origin: bottom left; margin-bottom: 40px !important; margin-left: 30px !important; }
+        .timecontrol-date, .timecontrol-speed, .leaflet-bar-timecontrol a { font-size: 14px !important; font-weight: bold !important; color: #000 !important; }
     </style>
     <script>
-        // Continuously check for the time dimension player to initialize, then force loop to true
-        var loopInterval = setInterval(function() {
-            for (var key in window) {
-                // Look for the leaflet map object containing the timeDimension properties
-                if (window[key] && window[key].timeDimension && window[key].timeDimension.player) {
-                    window[key].timeDimension.player.setLooped(true);
-                    clearInterval(loopInterval); // Stop checking once applied
-                    break;
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                // Find all time dimension players and force loop
+                var players = document.querySelectorAll('.timecontrol-loop');
+                if (players.length > 0) {
+                    players.forEach(function(p) { p.click(); });
                 }
-            }
-        }, 500);
+            }, 1000);
+        });
     </script>
     '''
     
-    # Inject both directly into the top level of the map
     m.get_root().html.add_child(folium.Element(legend_html))
     m.get_root().html.add_child(folium.Element(custom_ui_html))
 
     m.save(output_file)
-    print(f"Low-overhead heatmap saved to {output_file}")
     return True
 
 def send_email_with_link():
