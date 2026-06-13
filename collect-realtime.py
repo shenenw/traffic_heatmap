@@ -241,7 +241,44 @@ def collect_one_sample():
     clean_points = parse_and_filter_snapshot(entities_b, base_speeds)
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return timestamp_str, clean_points
-
+    
+def fix_heatmap_ui(html_file):
+    """Post-processes the Folium HTML to fix the control bar size and labels."""
+    try:
+        with open(html_file, 'r', encoding='utf-8') as f:
+            html = f.read()
+            
+        # 1. Change the confusing 'fps' label to 'x Speed'
+        html = html.replace(" + 'fps'", " + 'x Speed'")
+        html = html.replace(" + \"fps\"", " + \"x Speed\"")
+        
+        # 2. Inject custom CSS to fix the massive empty area
+        custom_css = """
+        <style>
+            /* Compact the HeatMapWithTime control bar */
+            .leaflet-control.timecontrol {
+                background-color: rgba(255, 255, 255, 0.9) !important;
+                padding: 10px 20px !important;
+                border-radius: 8px !important;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4) !important;
+                max-width: 450px !important; /* Constrains the width to remove empty space */
+                margin-left: auto !important;
+                margin-right: auto !important;
+                margin-bottom: 20px !important;
+            }
+            .timecontrol svg {
+                max-height: 45px !important; /* Prevents vertical stretching */
+            }
+        </style>
+        """
+        html = html.replace("</head>", f"{custom_css}\n</head>")
+        
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html)
+            
+    except Exception as e:
+        print(f"Could not apply UI fixes: {e}")
+        
 def main():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting collection...")
 
@@ -258,6 +295,8 @@ def main():
     save_history(history)
     
     if generate_heatmap(history, OUTPUT_HTML_FILE):
+        # Apply the UI fixes here!
+        fix_heatmap_ui(OUTPUT_HTML_FILE)
         send_email_with_link()
 
     return 0
