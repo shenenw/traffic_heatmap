@@ -6,7 +6,7 @@ name: Collect Realtime Bus
 on:
   schedule:
     # This runs the script automatically at the start of every hour (UTC)
-    - cron: '0 * * * *'
+    - cron: '7 * * * *'
   workflow_dispatch: # Allows you to also trigger it manually with a button click
 
 jobs:
