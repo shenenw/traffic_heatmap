@@ -299,84 +299,180 @@ def fix_heatmap_ui(html_file):
         html = html.replace(" + 'fps'", " + ' x Speed'")
         html = html.replace(" + \"fps\"", " + \" x Speed\"")
 
-        # Refactored CSS specifically optimized for 15% larger desktop elements & responsive mobile layout
+        # Refactored CSS specifically targeted at zero inner borders, unified background, perfect date centering and scaled layout
         custom_css = """
         <style>
             :root {
-                --ui-font-size: 16px;       /* 15% larger than 14px */
-                --ctrl-height: 46px;        /* 15% larger than 40px */
+                --ui-font-size: 18px;       /* Scaled up 15% from 16px */
+                --ctrl-height: 54px;        /* Scaled up 15% from 46px */
             }
 
-            /* Main Layout Structure (Scaled up on Desktop) */
-            .leaflet-control.timecontrol {
-                background-color: rgba(255, 255, 255, 0.98) !important;
-                padding: 8px 12px !important;
-                border-radius: 9px !important;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important;
-                border: 1px solid #ccc !important;
+            /* Reset all inner elements to transparent background, remove borders, radii, shadows, and margins */
+            .leaflet-control.timecontrol * {
+                background-color: transparent !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
+            }
+
+            /* Main Unified Layout Container (Desktop, Scaled 15% larger) */
+            .leaflet-control.timecontrol,
+            .leaflet-bar.timecontrol {
+                background-color: #ffffff !important; /* Unified solid background */
+                border: 1px solid #777777 !important; /* Unified high-contrast outer border */
+                border-radius: 10px !important;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
                 
                 display: flex !important;
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;        
-                align-items: center !important;
+                align-items: center !important;      /* Perfect vertical center alignment */
                 justify-content: flex-start !important;
-                gap: 10px !important;
+                gap: 16px !important;                /* Increased spacing */
                 box-sizing: border-box !important;
                 height: var(--ctrl-height) !important;
+                padding: 0 16px !important;          /* Increased padding */
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+                font-size: var(--ui-font-size) !important;
             }
             
-            .timecontrol-date, 
-            .timecontrol-speed {
+            /* Container for playback buttons */
+            .leaflet-control.timecontrol .leaflet-bar-timecontrol {
+                display: inline-flex !important;
+                flex-direction: row !important;
+                align-items: center !important;
+                height: 100% !important;
+                gap: 8px !important;
+            }
+            
+            /* Playback Button Alignment & Scaling */
+            .leaflet-control.timecontrol a.leaflet-bar-timecontrol,
+            .leaflet-control.timecontrol .leaflet-bar-timecontrol a,
+            .leaflet-control.timecontrol .timecontrol-loop {
+                width: 42px !important;     /* Scaled up from 35px */
+                height: 100% !important;    /* Full height of the parent container to keep them vertically centered */
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                color: #222 !important;
+                background: transparent !important;
+                text-decoration: none !important;
+                float: none !important;      /* Eliminate float offsets */
+            }
+
+            /* Center glyph/font icons inside the buttons */
+            .leaflet-control.timecontrol a.leaflet-bar-timecontrol::before,
+            .leaflet-control.timecontrol .leaflet-bar-timecontrol a::before,
+            .leaflet-control.timecontrol .timecontrol-loop::before {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                height: 100% !important;
+                line-height: 1 !important;
+                font-size: 19px !important;  /* Scaled up from 16px */
+            }
+
+            /* Absolute Vertical Centering & Scaling for Date & Time Text */
+            .leaflet-control.timecontrol .timecontrol-date,
+            .leaflet-control.timecontrol .timecontrol-date * {
                 font-size: var(--ui-font-size) !important;
                 font-family: -apple-system, Arial, sans-serif !important;
                 color: #222 !important;
                 white-space: nowrap !important;
                 display: inline-flex !important;
                 align-items: center !important;
+                justify-content: center !important;
+                height: 100% !important;
+                line-height: 1 !important;
+                position: static !important; /* Overrides absolute position shifts */
+                transform: none !important;
             }
 
-            .timecontrol-speed {
-                padding-left: 28px !important;
-                background-position: left center !important;
-                background-size: 18px 18px !important;
-            }
-            
-            .leaflet-bar-timecontrol {
-                display: inline-flex !important;
-                align-items: center !important;
-                border: none !important;
-                margin: 0 !important;
-                background: transparent !important;
-            }
-            
-            .leaflet-bar-timecontrol a {
-                width: 35px !important;     /* Scaled up from 30px */
-                height: 35px !important;    /* Scaled up from 30px */
-                font-size: 14px !important;  /* Scaled up from 12px */
+            /* Speed text container and indicator alignment & Scaling */
+            .leaflet-control.timecontrol .timecontrol-speed,
+            .leaflet-control.timecontrol .timecontrol-speed * {
+                font-size: var(--ui-font-size) !important;
+                font-family: -apple-system, Arial, sans-serif !important;
+                color: #222 !important;
+                white-space: nowrap !important;
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                color: #333 !important;
-                border: none !important;
-                background: transparent !important;
+                height: 100% !important;
+                line-height: 1 !important;
             }
 
-            .timecontrol input[type="range"] {
-                height: 5px !important;
-                background: #ccc !important;
-                border-radius: 2px !important;
-                outline: none !important;
-                -webkit-appearance: none !important;
-                flex-grow: 1 !important;
-                min-width: 80px !important;
+            .leaflet-control.timecontrol .timecontrol-speed {
+                padding-left: 32px !important; /* Scaled up from 28px */
+                background-position: left center !important;
+                background-size: 21px 21px !important; /* Scaled up from 18px */
             }
-            
+
+            /* Slider Alignment Wrappers */
+            .leaflet-control.timecontrol .timecontrol-slider {
+                display: inline-flex !important;
+                align-items: center !important;
+                flex-grow: 2 !important;     /* Assign priority space for main time slider */
+                height: 100% !important;
+                margin: 0 4px !important;
+            }
+
+            /* Cross-browser range input resets to restore track color and height */
+            .timecontrol input[type="range"] {
+                -webkit-appearance: none !important;
+                -moz-appearance: none !important;
+                appearance: none !important;
+                background: #ccc !important;
+                border: none !important;
+                border-radius: 4px !important;
+                height: 8px !important;      /* Scaled up from 6px */
+                outline: none !important;
+                vertical-align: middle !important;
+                flex-grow: 1 !important;
+            }
+
+            /* Precise FPS speed slider on desktop (360px wide) */
+            .leaflet-control.timecontrol .timecontrol-speed input[type="range"] {
+                width: 360px !important;      /* Maintain 360px for high precision speed tuning */
+                min-width: 360px !important;
+                flex-grow: 0 !important;      /* Maintain exact dimension */
+            }
+
+            /* Slider track resets for Webkit & Firefox */
+            .timecontrol input[type="range"]::-webkit-slider-runnable-track {
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            .timecontrol input[type="range"]::-moz-range-track {
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+
+            /* Consistent circular slider thumbs */
             .timecontrol input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none !important;
-                width: 16px !important;     /* Scaled up from 14px */
-                height: 16px !important;    /* Scaled up from 14px */
+                appearance: none !important;
+                width: 18px !important;     /* Scaled up from 14px */
+                height: 18px !important;    /* Scaled up from 14px */
                 border-radius: 50% !important;
                 background: #444 !important;
+                border: none !important;
+                cursor: pointer !important;
+                margin-top: 0 !important;
+            }
+            
+            .timecontrol input[type="range"]::-moz-range-thumb {
+                width: 18px !important;     /* Scaled up from 14px */
+                height: 18px !important;    /* Scaled up from 14px */
+                border: none !important;
+                border-radius: 50% !important;
+                background: #444 !important;
+                cursor: pointer !important;
             }
 
             /* LIQUID GRID RECONSTRUCTION SHIFTS CONTROLS BELOW FLOATING LEGEND ON MOBILE */
@@ -402,15 +498,21 @@ def fix_heatmap_ui(html_file):
                     gap: 4px !important;
                 }
 
-                .leaflet-bar-timecontrol a {
+                .leaflet-bar-timecontrol a,
+                .leaflet-control-timecontrol a {
                     width: 26px !important;
                     height: 26px !important;
                     font-size: 11px !important;
                 }
 
                 .timecontrol input[type="range"] {
-                    width: 20vw !important;
+                    width: 18vw !important;
                     height: 4px !important;
+                }
+
+                .timecontrol-speed input[type="range"] {
+                    width: 15vw !important;
+                    min-width: 50px !important;
                 }
 
                 .timecontrol input[type="range"]::-webkit-slider-thumb {
@@ -418,12 +520,16 @@ def fix_heatmap_ui(html_file):
                     height: 12px !important;
                 }
                 
-                .timecontrol-date { 
+                .timecontrol-date,
+                .timecontrol-date * { 
                     font-size: 12px !important; 
                     font-weight: bold !important; 
                 }
-                .timecontrol-speed { 
+                .timecontrol-speed,
+                .timecontrol-speed * { 
                     font-size: 11px !important;
+                }
+                .timecontrol-speed {
                     padding-left: 18px !important;
                     background-size: 14px 14px !important;
                 }
